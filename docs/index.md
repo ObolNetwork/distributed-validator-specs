@@ -7,11 +7,11 @@ cryptographic subspecifications.
 
 ### Lean Ethereum Specifications
 
-The core protocol specifications are located in `src/lean_spec/`.
+The core protocol specifications are located in `src/dv_spec/`.
 
 ### Cryptographic Subspecifications
 
-Supporting cryptographic primitives are located in `src/lean_spec/subspecs/`.
+Supporting cryptographic primitives are located in `src/dv_spec/subspecs/`.
 
 ### Client Subspecifications
 
@@ -26,5 +26,5 @@ format for the time being and are subject to change.
 
 ## Development
 
-- [Readme](https://github.com/leanEthereum/leanSpec/blob/main/README.md)
-- [Contributing](https://github.com/leanEthereum/leanSpec/blob/main/CONTRIBUTING.md)
+- [Readme](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/README.md)
+- [Contributing](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/CONTRIBUTING.md)

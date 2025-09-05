@@ -12,4 +12,4 @@
     uvx --with=tox-uv tox
     ```
 - [ ] Considered adding appropriate tests for the changes.
-- [ ] Considered updating the online docs in the [./docs/](/leanEthereum/leanSpec/tree/main/docs/) directory.
+- [ ] Considered updating the online docs in the [./docs/](/ObolNetwork/distributed-validator-specs/tree/main/docs/) directory.

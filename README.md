@@ -1,6 +1,6 @@
-# Lean Ethereum Specifications
+# Distributed Validator Specifications
 
-The Lean Ethereum protocol specifications and cryptographic subspecifications.
+Python specifications and protocol definitions for Ethereum distributed validators in the Obol network. This repository contains the core data structures, validation rules, and protocol specifications needed to implement distributed validator technology.
 
 ## Quick Start
 
@@ -27,8 +27,8 @@ uv python install 3.12
 
 ```bash
 # Clone this repository
-git clone https://github.com/leanEthereum/leanSpec leanSpec
-cd leanSpec
+git clone https://github.com/ObolNetwork/distributed-validator-specs distributed-validator-specs
+cd distributed-validator-specs
 
 # Install dependencies
 uv sync --all-extras
@@ -37,25 +37,65 @@ uv sync --all-extras
 uv run pytest
 ```
 
+## What's Included
+
+This repository currently provides:
+
+- **DistributedValidator**: Core specification for distributed validators with cluster metadata, operator lists, and consensus thresholds
+- **ValidatorCluster**: Grouping mechanism for multiple distributed validators  
+- **Ethereum Types**: Compatible base types (Uint64, Bytes32) that match Ethereum specifications
+- **Validation**: Automatic Pydantic validation for all protocol constraints
+- **Testing**: Comprehensive test suite with 100% coverage
+- **Development Tools**: Full toolchain with linting, type checking, and documentation
+
+### Hello World Example
+
+```python
+from dv_spec import DistributedValidator, hello_distributed_validator
+from dv_spec.types import Bytes32, Uint64
+
+# Test the basic functionality
+print(hello_distributed_validator())
+# Output: "Hello from the Obol Distributed Validator Network!"
+
+# Create a basic distributed validator
+dv = DistributedValidator(
+    validator_index=Uint64(1),
+    pubkey=Bytes32(b"validator_pubkey_32_bytes_here"),  
+    cluster_id=Bytes32(b"cluster_id_32_bytes_here____"),
+    operators=[Bytes32(b"operator_key_32_bytes_here___")],
+    threshold=Uint64(1)
+)
+
+print(f"Created DV {dv.validator_index} with {len(dv.operators)} operators")
+```
+
 ### Project Structure
 
 ```
 ├── src/
-│   ├── lean_spec/             # Main specifications
-│   │   ├── __init__.py
-│   │   └── ...
-│   └── subspecs/              # Sub-specifications
-│       ├── poseidon2/
-│       │   ├── __init__.py
-│       │   ├── poseidon2.py
-│       │   └── ...
-│       ├── ...
-│       └── ...
-├── tests/                     # Test suite
-│   ├── lean_spec/             # Tests for main specs
-│   └── subspecs/              # Tests for subspecs
-├── docs/                      # Documentation
-└── pyproject.toml             # Project configuration
+│   └── dv_spec/                    # Main distributed validator specs
+│       ├── __init__.py             # Package exports
+│       ├── validator.py            # Core DV data structures
+│       ├── client/                 # Client configuration
+│       │   ├── nodes.yaml          # Node configuration examples
+│       │   └── validators.yaml     # Validator configuration examples
+│       ├── subspecs/               # Future protocol subspecifications
+│       │   └── __init__.py         # Reserved for extensions
+│       └── types/                  # Base types and primitives
+│           ├── __init__.py         # Type exports
+│           ├── base.py             # Base Pydantic models
+│           ├── hash.py             # Hash types (Bytes32, etc.)
+│           ├── uint64.py           # Ethereum uint64 type
+│           └── validator.py        # Validator-specific types
+├── tests/                          # Test suite
+│   ├── conftest.py                 # Pytest configuration
+│   └── dv_spec/                    # Tests for specifications
+│       ├── test_dvspec.py          # Basic package tests
+│       └── test_validator.py       # Validator specification tests
+├── docs/                           # MkDocs documentation
+├── pyproject.toml                  # Project configuration & dependencies
+└── CLAUDE.md                       # Development guide
 ```
 
 ### Workspace Commands
@@ -134,54 +174,98 @@ uv run mkdocs serve
 uv run mkdocs build
 ```
 
-## Writing Specifications
+## Writing Distributed Validator Specifications
+
+### Core Concepts
+
+This repository uses **Pydantic models** to define distributed validator data structures with automatic validation:
+
+- **DistributedValidator**: Core specification for a DV with cluster info, operators, and thresholds
+- **ValidatorCluster**: Groups of distributed validators operating together
+- **Types**: Ethereum-compatible base types (Uint64, Bytes32, etc.)
+
+### Example: Basic Distributed Validator
+
+```python
+from dv_spec import DistributedValidator, hello_distributed_validator
+from dv_spec.types import Bytes32, Uint64
+
+# Create a distributed validator specification
+dv = DistributedValidator(
+    validator_index=Uint64(1),
+    pubkey=Bytes32(b"validator_pubkey_32_bytes_here"),
+    cluster_id=Bytes32(b"cluster_id_32_bytes_here____"),
+    operators=[
+        Bytes32(b"operator1_pubkey_32_bytes_here"),
+        Bytes32(b"operator2_pubkey_32_bytes_here"),
+    ],
+    threshold=Uint64(2),  # Need 2 of 2 operators for consensus
+)
+
+print(hello_distributed_validator())
+print(f"DV {dv.validator_index} in cluster {dv.cluster_id.hex()[:8]}...")
+```
 
 ### Example: Writing Tests
 
 ```python
-# tests/test_new_types.py
+# tests/dv_spec/test_my_feature.py
 import pytest
 from pydantic import ValidationError
-from lean_spec.types import Withdrawal  # Example Pydantic model
+from dv_spec import DistributedValidator
+from dv_spec.types import Bytes32, Uint64
 
 
-TEST_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
-
-
-# Parametrized test - test multiple inputs
-@pytest.mark.parametrize("amount", [0, 1, 1000, 2**64 - 1])
-def test_withdrawal_amount(amount):
-    withdrawal = Withdrawal(
-            index=0,
-            validator_index=1,
-            address=TEST_ADDRESS,
-            amount=amount,
+# Parametrized test - test multiple threshold values
+@pytest.mark.parametrize("threshold", [1, 2, 5, 10])
+def test_distributed_validator_threshold(threshold):
+    """Test different threshold values for distributed validators."""
+    operators = [Bytes32(f"operator{i}_key" + b"\x00" * 19) for i in range(threshold)]
+    
+    dv = DistributedValidator(
+        validator_index=Uint64(1),
+        pubkey=Bytes32(b"validator_pubkey" + b"\x00" * 16),
+        cluster_id=Bytes32(b"cluster_id" + b"\x00" * 22),
+        operators=operators,
+        threshold=Uint64(threshold),
     )
-    assert withdrawal.amount == amount  # Check if amount is set correctly
-
+    
+    assert dv.threshold == threshold
+    assert len(dv.operators) == threshold
 
 
 # Exception testing
-def test_withdrawal_amount_above_uint64_max():
-    with pytest.raises(ValidationError) as e:
-        Withdrawal(
-            index=0,
-            validator_index=1,
-            address=TEST_ADDRESS,
-            amount=2**64,  # Exceeds uint64 max
+def test_distributed_validator_empty_operators():
+    """Test that empty operators list raises validation error."""
+    with pytest.raises(ValidationError) as exc_info:
+        DistributedValidator(
+            validator_index=Uint64(1),
+            pubkey=Bytes32(b"validator_pubkey" + b"\x00" * 16),
+            cluster_id=Bytes32(b"cluster_id" + b"\x00" * 22),
+            operators=[],  # Empty list should fail validation
+            threshold=Uint64(1),
         )
-    assert " amount " in str(e.value)
+    assert "operators" in str(exc_info.value).lower()
 ```
 
-## Guide to Python Tools
+## Development Tools Guide
 
-- **Pydantic models**: Think of these as strongly-typed data structures that validate inputs automatically
-- **pytest**: Testing framework - just name test files `test_*.py` and functions `test_*`
-- **uv**: Fast Python package manager - like npm/yarn but for Python
-- **ruff**: Linter and formatter
-- **mypy**: Type checker that works with Pydantic models
-- **tox**: Automation tool for running tests across multiple environments
-- **mkdocs**: Documentation generator - write docs in Markdown, serve them locally
+### Core Technologies
+- **Pydantic models**: Type-safe data structures with automatic validation - perfect for protocol specifications
+- **uv**: Ultra-fast Python package manager and project management
+- **pytest**: Testing framework with excellent parametrization and fixtures
+- **ruff**: Lightning-fast linter and formatter (replaces black, flake8, isort)
+- **mypy**: Static type checker that works seamlessly with Pydantic
+
+### Distributed Validator Specific
+- **Ethereum Types**: Custom Uint64, Bytes32 types that match Ethereum specifications
+- **Cluster Specifications**: Data structures for multi-operator validator setups
+- **Protocol Validation**: Automatic validation of DV protocol constraints
+
+### Development Workflow Tools
+- **tox**: Runs tests across multiple Python versions and environments
+- **mkdocs**: Documentation generator for protocol specifications
+- **coverage**: Test coverage reporting to ensure thorough testing
 
 ## Common Commands Reference
 

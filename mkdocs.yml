@@ -1,10 +1,10 @@
-site_name: Lean Ethereum Specifications
-site_description: Reference implementations of the Lean Ethereum protocol
-site_author: Ethereum Foundation
-site_url: https://leanethereum.github.io/lean-spec/
+site_name: Distributed Validator Specifications
+site_description: Reference implementations of the Obol Distributed Validator protocol
+site_author: Obol Labs, Inc.
+site_url: https://obolnetwork.github.io/distributed-validator-specs
 
-repo_name: leanEthereum/lean-spec
-repo_url: https://github.com/leanEthereum/lean-spec
+repo_name: ObolNetwork/distributed-validator-specs
+repo_url: https://github.com/ObolNetwork/distributed-validator-specs
 edit_uri: edit/main/docs/
 
 theme:
@@ -63,7 +63,7 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/leanEthereum/lean-spec
+      link: https://github.com/ObolNetwork/distributed-validator-specs
 
 copyright: |
-  &copy; 2025 Ethereum Foundation
+  &copy; 2025 Obol Labs, Inc.

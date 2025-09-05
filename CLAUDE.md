@@ -1,15 +1,17 @@
-# Working with leanSpec
+# Working with distributed-validator-specs
 
 ## Repository Overview
 
-This is a Python repository for the Lean Ethereum Python specifications. It is set up as
-a single `uv` project containing the main specifications and various cryptographic
-subspecifications that the Lean Ethereum protocol relies on.
+This is a Python repository for Ethereum Distributed Validator protocol specifications. It is set up as
+a single `uv` project containing the main specifications, data structures, and validation rules
+for distributed validator clusters in the Obol network.
 
 ## Key Directories
 
-- `src/lean_spec/` - Main specifications for the Lean Ethereum protocol
-- `src/lean_spec/subspecs/` - Supporting subspecifications for cryptographic primitives
+- `src/dv_spec/` - Main distributed validator specifications and data structures
+- `src/dv_spec/subspecs/` - Reserved for future protocol subspecifications
+- `src/dv_spec/types/` - Ethereum-compatible base types (Uint64, Bytes32, etc.)
+- `src/dv_spec/client/` - Client configuration examples
 - `tests/` - Specification tests
 - `docs/` - MkDocs documentation source
 
@@ -24,7 +26,7 @@ uv sync --all-extras
 uv run pytest
 
 # Run tests with coverage
-uv run pytest --cov=src/lean_spec --cov-report=html
+uv run pytest --cov=src/dv_spec --cov-report=html
 ```
 
 ### Code Quality Checks
@@ -50,10 +52,11 @@ uv run tox
 
 ### Common Tasks
 
-1. **Adding to main specs**: Located in `src/lean_spec/`
-2. **Adding to subspecs**: Located in `src/lean_spec/subspecs/`
-   - Create a new subdirectory for each subspec (e.g., `src/lean_spec/subspecs/poseidon2/`)
-   - Tests for subspecs should be in `tests/subspecs/{subspec}/`, mirroring the source structure
+1. **Adding to main specs**: Located in `src/dv_spec/` (e.g., new validator types, cluster specs)
+2. **Adding base types**: Located in `src/dv_spec/types/` (e.g., new Ethereum-compatible types)
+3. **Adding to subspecs**: Located in `src/dv_spec/subspecs/` (future protocol extensions)
+   - Create a new subdirectory for each subspec (e.g., `src/dv_spec/subspecs/consensus/`)
+   - Tests for subspecs should be in `tests/dv_spec/subspecs/{subspec}/`, mirroring the source structure
 
 ## Important Patterns
 
@@ -99,4 +102,5 @@ uv run tox
 1. This repository uses Python 3.12+ features
 2. All models should use Pydantic for automatic validation.
 3. Keep things simple, readable, and clear. These are meant to be clear specifications.
-4. The repository is `leanSpec` not `lean-spec`.
+4. The repository is `distributed-validator-specs` for Obol's distributed validator protocol.
+5. Focus on distributed validator cluster specifications, operator management, and consensus thresholds.

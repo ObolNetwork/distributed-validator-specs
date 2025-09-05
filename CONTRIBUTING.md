@@ -1,4 +1,4 @@
-# Contributing to Lean Spec
+# Contributing to Distributed Validator Specs
 
 ## Quick Start
 
@@ -26,11 +26,11 @@
 
 ## Adding New Subspecifications
 
-New subspecs belong in `src/lean_spec/subspecs/`. Follow the pattern of existing subspecs like `poseidon2`:
+New subspecs belong in `src/dv_spec/subspecs/`. Follow the pattern of existing subspecs like `poseidon2`:
 
 ```bash
-mkdir -p src/lean_spec/subspecs/my_new_subspec
-touch src/lean_spec/subspecs/my_new_subspec/__init__.py
+mkdir -p src/dv_spec/subspecs/my_new_subspec
+touch src/dv_spec/subspecs/my_new_subspec/__init__.py
 mkdir -p tests/subspecs/my_new_subspec
 ```
 
@@ -42,6 +42,6 @@ mkdir -p tests/subspecs/my_new_subspec
 
 ## Questions?
 
-- Check existing [issues](https://github.com/leanEthereum/leanSpec/issues)
+- Check existing [issues](https://github.com/ObolNetwork/distributed-validator-specs/issues)
 - Open a new issue for discussion
 - See [README.md](README.md) for more details on the project structure and commands

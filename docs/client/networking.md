@@ -26,7 +26,7 @@
 
 ## Node identification
 
-Nodes are defined as a list of their ENRs in a yaml file at [`src/lean_spec/client/nodes.yaml`](../../src/lean_spec/client/nodes.yaml).
+Nodes are defined as a list of their ENRs in a yaml file at [`src/dv_spec/client/nodes.yaml`](../../src/dv_spec/client/nodes.yaml).
 For example:
 
 ```yaml

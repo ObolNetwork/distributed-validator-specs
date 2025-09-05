@@ -13,7 +13,7 @@
 To ensure a good distribution of block proposer duties in a round-robin manner
 and avoid clashing IDs, validator IDs are pre-assigned to each client
 implementation in a yaml file at
-[`src/lean_spec/client/validators.yaml`](../../src/lean_spec/client/validators.yaml).
+[`src/dv_spec/client/validators.yaml`](../../src/dv_spec/client/validators.yaml).
 For example:
 
 ```yaml
