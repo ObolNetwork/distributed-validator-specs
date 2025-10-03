@@ -109,8 +109,8 @@ markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 source = ["src"]
 branch = true
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ipython>=8.31.0,<9",
     "ipdb>=0.13",
     "tomli-w>=1.0.0",
