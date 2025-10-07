@@ -31,14 +31,15 @@ class QBFTMsg(BaseModel):
         default=None,
         description="The prepared round number. None indicates no preparation has occurred."
     )
-    signature: bytes = Field(description="The signature of the message.")
-    value_hash: bytes = Field(description="The hash of the value being proposed.")
+    signature: Optional[bytes] = Field(default=None, description="The signature of the message.")
+    value_hash: Optional[bytes] = Field(default=None, description="The hash of the value being proposed.")
     prepared_value_hash: Optional[bytes] = Field(
         default=None,
         description="The hash of the prepared value."
     )
 
     @field_validator('peer_idx')
+    @classmethod
     def validate_peer_idx(cls, v: int) -> int:
         """Ensure peer_idx is non-negative."""
         if v < 0:
@@ -46,6 +47,7 @@ class QBFTMsg(BaseModel):
         return v
 
     @field_validator('round')
+    @classmethod
     def validate_round(cls, v: int) -> int:
         """Ensure round is positive."""
         if v < 1:
@@ -53,10 +55,11 @@ class QBFTMsg(BaseModel):
         return v
 
     @field_validator('prepared_round')
+    @classmethod
     def validate_prepared_round(cls, v: Optional[int], info) -> Optional[int]:
         """
         Validate prepared_round constraints.
-        
+
         Rules:
         1. If not None, prepared_round must be >= 1
         2. If not None, prepared_round must be <= current round
@@ -77,6 +80,7 @@ class QBFTMsg(BaseModel):
         return v
 
     @field_validator('signature')
+    @classmethod
     def validate_signature(cls, v: bytes) -> bytes:
         """Ensure signature is 65 bytes ("Ethereum R S V" format)"""
         if len(v) != 65:
@@ -84,17 +88,19 @@ class QBFTMsg(BaseModel):
         return v
 
     @field_validator('value_hash')
-    def validate_value_hash(cls, v: bytes) -> bytes:
+    @classmethod
+    def validate_value_hash(cls, v: Optional[bytes]) -> Optional[bytes]:
         """Ensure hash is 32 bytes"""
-        if len(v) != 32:
+        if v is not None and len(v) != 32:
             raise ValueError("value_hash must be 32 bytes")
         return v
 
     @field_validator('prepared_value_hash')
+    @classmethod
     def validate_prepared_value_hash(cls, v: Optional[bytes], info) -> Optional[bytes]:
         """
         Validate prepared_value_hash constraints.
-        
+
         Rules:
         1. If not None, prepared_value_hash must be 32 bytes
         2. None indicates no previous value prepared
@@ -118,57 +124,3 @@ class QBFTConsensusMsg(BaseModel):
         default_factory=list,
         description="Actual consensus values referenced by value hashes"
     )
-
-    @field_validator('justification')
-    def validate_justification(cls, v: list[QBFTMsg], info) -> list[QBFTMsg]:
-        """
-        Validate justification given specific message type.
-        This is basic validation only. Detailed verification occurs in protocol.py.
-        """
-        if not info.data or 'msg' not in info.data:
-            raise ValueError("msg must be provided in validation context")
-
-        msg = info.data['msg']
-
-        if msg.type == MsgType.PRE_PREPARE:
-            # PRE-PREPARE messages shouldn't have justifications in round 1
-            if msg.round == 1 and v:
-                raise ValueError("PRE-PREPARE messages in round 1 should not have justifications")
-            # PRE-PREPARE messages should have justifications in rounds > 1
-            if msg.round > 1 and not v:
-                raise ValueError("PRE-PREPARE messages in rounds > 1 require justifications")
-
-        elif msg.type == MsgType.PREPARE:
-            # PREPARE messages should have PRE-PREPARE justification
-            if not any(just.type == MsgType.PRE_PREPARE and
-                       just.duty == msg.duty and
-                       just.round == msg.round for just in v):
-                raise ValueError("PREPARE messages require a matching PRE-PREPARE justification")
-
-        elif msg.type == MsgType.COMMIT:
-            # COMMIT messages should have PREPARE justifications
-            if not any(just.type == MsgType.PREPARE and
-                       just.duty == msg.duty and
-                       just.round == msg.round for just in v):
-                raise ValueError("COMMIT messages require PREPARE justifications")
-
-        elif msg.type == MsgType.ROUND_CHANGE:
-            # ROUND-CHANGE messages don't need justification when no prepared value is present
-            if msg.prepared_round is None and msg.prepared_value_hash is None:
-                if v:
-                    raise ValueError("ROUND-CHANGE with no prepared value should not have justifications")
-            else:
-                # Has prepared value: should have justifications
-                if not v:
-                    raise ValueError("ROUND-CHANGE with prepared value requires justifications")
-
-            return v
-
-        elif msg.type == MsgType.DECIDED:
-            # DECIDED messages should have COMMIT justifications
-            if not any(just.type == MsgType.COMMIT
-                       and just.duty == msg.duty
-                       and just.round == msg.round for just in v):
-                raise ValueError("DECIDED messages require COMMIT justifications")
-
-        return v

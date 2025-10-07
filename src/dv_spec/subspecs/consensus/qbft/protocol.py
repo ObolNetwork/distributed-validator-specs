@@ -14,10 +14,32 @@ from typing import Any, Dict, List, Optional, Tuple
 from dv_spec.subspecs.consensus.qbft.message import MsgType, QBFTConsensusMsg, QBFTMsg
 from dv_spec.subspecs.consensus.timer import RoundTimer, get_default_timer
 from dv_spec.types import Duty
+from dv_spec.types.base import StrictBaseModel
 
+
+class QBFTDefinition(StrictBaseModel):
+    """
+    QBFT consensus system parameters and computed properties.
+    This remains constant across multiple instances of consensus.
+    """
+
+    nodes: int
+    """Total number of nodes in the consensus cluster."""
+
+    def quorum(self) -> int:
+        """Calculate quorum size."""
+        return int(math.ceil(float(self.nodes * 2) / 3))
+
+    def faulty(self) -> int:
+        """Calculate maximum number of faulty nodes."""
+        return int(math.floor(float(self.nodes - 1) / 3))
+
+    def is_leader(self, duty: Duty, round_num: int, peer: int) -> bool:
+        """Deterministic leader election function"""
+        return (duty.slot + duty.type + round_num) % self.nodes == peer
 
 class UponRule(Enum):
-    """Upon rules that trigger events in QBFT."""
+    """UponRule defines the event based rules that are triggered when messages are received."""
     NOTHING = "nothing"
     JUSTIFIED_PRE_PREPARE = "justified_pre_prepare"
     QUORUM_PREPARES = "quorum_prepares"
@@ -28,647 +50,505 @@ class UponRule(Enum):
     JUSTIFIED_DECIDED = "justified_decided"
     ROUND_TIMEOUT = "round_timeout"
 
-
 @dataclass
 class QBFTConsensus:
     """
     QBFT consensus instance for a specific duty.
-    
-    Each instance is identified by its duty (type + slot) and handles
-    consensus for that specific duty.
+
+    Maintains all data needed for QBFT consensus including message history,
+    state information, and timing for round changes.
     """
+
+    d: QBFTDefinition
+    """QBFT system parameters."""
+
     duty: Duty
-    cluster_size: int
-    peer_idx: int
-    current_round: int = 1
+    """Current duty being agreed upon."""
 
-    # Proposal value for this node (what we want to propose when leader)
-    proposal_value: Optional[Any] = None
-    proposal_value_hash: Optional[bytes] = None
+    peer: int
+    """Index of this peer in the cluster."""
 
-    # Current consensus value and hash
-    current_value: Optional[Any] = None
-    current_value_hash: Optional[bytes] = None
+    proposal_value: Any
+    """Proposal value for this node."""
 
-    # Preparation tracking
+    round: int = 1
+    """Current round number."""
+
     prepared_round: Optional[int] = None
+    """Prepared round if any."""
+
     prepared_value: Optional[Any] = None
+    """Prepared value if any."""
+
     prepared_value_hash: Optional[bytes] = None
+    """Hash of the prepared value if any."""
 
-    # Message storage for each round
-    received_pre_prepares: Dict[int, QBFTMsg] = field(default_factory=dict)
-    received_prepares: Dict[int, List[QBFTMsg]] = field(default_factory=lambda: {})
-    received_commits: Dict[int, List[QBFTMsg]] = field(default_factory=lambda: {})
-    received_round_changes: Dict[int, List[QBFTMsg]] = field(default_factory=lambda: {})
-    received_decided: List[QBFTMsg] = field(default_factory=list)
+    prepared_justification: List[QBFTMsg] = field(default_factory=list)
+    """Justification for the prepared value if any."""
 
-    # Timing for round changes
+    q_commit: List[QBFTMsg] = field(default_factory=list)
+    """Stored quorum of COMMIT messages."""
+
+    buffer: Dict[int, List[QBFTConsensusMsg]] = field(default_factory=dict)
+    """Storer for peer messages."""
+
+    dedupRules: Dict[Tuple[UponRule, int], bool] = field(default_factory=dict)
+    """Deduplication for rules triggered per round."""
+
     round_start_time: float = field(default_factory=time.time)
-    timer: RoundTimer = field(init=False)  # Round timer implementation
+    """Timestamp when the current round started."""
 
-    # Byzantine fault tolerance properties
-    max_byzantine_faults: int = field(init=False)
-    quorum_size: int = field(init=False)
+    timer: RoundTimer = field(init=False)
+    """Round timer instance."""
+
+    # TODO Charon works a bit differently than this
+    mapping: Dict[bytes, Any] = field(default_factory=dict)
+    """Stores value mappings by their hash."""
 
     def __post_init__(self):
-        """Calculate Byzantine fault tolerance parameters after initialization."""
-        self.max_byzantine_faults = self._compute_faulty(self.cluster_size)
-        self.quorum_size = self._compute_quorum(self.cluster_size)
+        """Initialize specific timer implementation."""
         self.timer = get_default_timer(self.duty)
+        self._store_value_mapping([self.proposal_value])
 
-    def _compute_quorum(self, nodes: int) -> int:
-        """Quorum calculation using standard Byzantine fault tolerant formula: ceil(2n/3)."""
-        return int(math.ceil(float(nodes * 2) / 3))
+    def _hash_value(self, value: Any) -> bytes:
+        """Compute a simple hash of the value."""
+        # TODO recreate hashing similar to Charon
+        return hash(value).to_bytes(32, byteorder='big', signed=True)
 
-    def _compute_faulty(self, nodes: int) -> int:
-        """Faulty nodes calculation using standard Byzantine fault tolerant formula: floor((n-1)/3)."""
-        return int(math.floor(float(nodes - 1) / 3))
-
-    def compute_leader(self, round_num: int) -> int:
-        """Compute the leader for a given round using round-robin."""
-        return (self.duty.slot + self.duty.type + round_num) % self.cluster_size
-
-    def has_pre_prepare_for_round(self, round_num: int) -> bool:
-        """Check if we have a PRE-PREPARE for the given round."""
-        return round_num in self.received_pre_prepares
-
-    def has_quorum_prepares_for_round_value(self, round_num: int, value_hash: bytes) -> bool:
-        """Check if we have quorum PREPARE messages for given round and value."""
-        if round_num not in self.received_prepares:
-            return False
-
-        matching_prepares = [
-            msg for msg in self.received_prepares[round_num]
-            if msg.value_hash == value_hash
-        ]
-
-        # Count our own implicit PREPARE if we have sent/would send one for this value
-        count = len(matching_prepares)
-        if (self.has_pre_prepare_for_round(round_num) and
-            self.received_pre_prepares[round_num].value_hash == value_hash):
-            count += 1  # Add our own implicit PREPARE
-
-        return count >= self.quorum_size
-
-    def has_quorum_commits_for_round_value(self, round_num: int, value_hash: bytes) -> bool:
-        """Check if we have quorum COMMIT messages for given round and value."""
-        if round_num not in self.received_commits:
-            return False
-
-        matching_commits = [
-            msg for msg in self.received_commits[round_num]
-            if msg.value_hash == value_hash
-        ]
-
-        # Count our own implicit COMMIT if we have the prerequisites
-        count = len(matching_commits)
-        if (self.has_pre_prepare_for_round(round_num) and
-            self.received_pre_prepares[round_num].value_hash == value_hash and
-            self._count_matching_prepares(round_num, value_hash) >= self.quorum_size):
-            count += 1  # Add our own implicit COMMIT
-
-        return count >= self.quorum_size
-
-    def _count_matching_prepares(self, round_num: int, value_hash: bytes) -> int:
-        """Count PREPARE messages for given round and value, including our own implicit one."""
-        if round_num not in self.received_prepares:
-            return 0
-
-        matching_prepares = [
-            msg for msg in self.received_prepares[round_num]
-            if msg.value_hash == value_hash
-        ]
-
-        count = len(matching_prepares)
-        # Add our own implicit PREPARE if we have the PRE-PREPARE for this value
-        if (self.has_pre_prepare_for_round(round_num) and
-            self.received_pre_prepares[round_num].value_hash == value_hash):
-            count += 1
-
-        return count
-
-    def is_decided(self) -> bool:
-        """Check if consensus has been decided (we have a DECIDED message)."""
-        return len(self.received_decided) > 0
-
-    def can_prepare_for_round_value(self, round_num: int, value_hash: bytes) -> bool:
-        """Check if we can send PREPARE for given round and value."""
-        # Can prepare if we have the PRE-PREPARE and haven't prepared yet
-        return (self.has_pre_prepare_for_round(round_num) and
-                self.received_pre_prepares[round_num].value_hash == value_hash)
-
-    def can_commit_for_round_value(self, round_num: int, value_hash: bytes) -> bool:
-        """Check if we can send COMMIT for given round and value."""
-        # Can commit if we have quorum PREPARE
-        return self.has_quorum_prepares_for_round_value(round_num, value_hash)
-
-    def can_decide_for_round_value(self, round_num: int, value_hash: bytes) -> bool:
-        """Check if we can decide for given round and value."""
-        # Can decide if we have quorum COMMIT (regardless of current decision state)
-        return self.has_quorum_commits_for_round_value(round_num, value_hash)
-
-    def is_justified(self, consensus_msg: QBFTConsensusMsg) -> bool:
-        """Check if a message is justified or if it does not need justification."""
+    def is_justified_pre_prepare(self, consensus_msg: QBFTConsensusMsg) -> bool:
+        """Returns true if the PRE-PREPARE message is justified."""
         msg = consensus_msg.msg
-        justifications = consensus_msg.justification
-
-        if msg.type == MsgType.PRE_PREPARE:
-            return self.verify_pre_prepare_justification(msg, justifications)
-        elif msg.type == MsgType.PREPARE:
-            # PREPARE messages don't need separate justification beyond structural validation
-            return True
-        elif msg.type == MsgType.COMMIT:
-            # COMMIT messages don't need separate justification beyond structural validation
-            return True
-        elif msg.type == MsgType.ROUND_CHANGE:
-            return self.verify_round_change_justification(msg, justifications)
-        elif msg.type == MsgType.DECIDED:
-            return self.verify_decided_justification(msg, justifications)
-        else:
-            # Unknown message type - reject
+        if msg.type != MsgType.PRE_PREPARE:
             return False
 
-    def verify_pre_prepare_justification(self, msg: QBFTMsg, justifications: List[QBFTMsg]) -> bool:
-        """Verify PRE-PREPARE justification according to JustifyPrePrepare predicate."""
+        if self.d.is_leader(self.duty, msg.round, msg.peer_idx) is False:
+            return False
+
+        # Round 1: no justification needed
         if msg.round == 1:
-            # Round 1: no justification needed
-            return len(justifications) == 0
-
-        # Round > 1: must have quorum of ROUND-CHANGE messages
-        round_changes = [j for j in justifications if j.type == MsgType.ROUND_CHANGE]
-        expected_round = msg.round - 1
-        valid_rcs = [rc for rc in round_changes
-                    if rc.duty == msg.duty and rc.round == expected_round]
-
-        if len(valid_rcs) < self.quorum_size:
-            return False
-
-        # Check if proposed value is justified
-        no_prepared = all(rc.prepared_round is None for rc in valid_rcs)
-
-        if no_prepared:
-            # Leader can propose any value
             return True
 
-        # Must propose value with highest prepared round
-        prepared_values = [(rc.prepared_round, rc.prepared_value_hash)
-                          for rc in valid_rcs
-                          if rc.prepared_round is not None and rc.prepared_value_hash is not None]
+        # Further rounds: must have either (1) or (2)
+        # - (1) must have a quorum of ROUND-CHANGE messages with nothing prepared
+        # - (2) must have a quorum of ROUND-CHANGE messages with a prepared value and a quorum of PREPARE messages
+        # for the highest prepared round/value
 
-        if not prepared_values:
+        qrc = [j for j in consensus_msg.justification if j.type == MsgType.ROUND_CHANGE and j.round == msg.round]
+        if len(qrc) < self.d.quorum():
+            return False
+
+        # (1)
+        all_none_prepared = all(rc.prepared_round is None and rc.prepared_value_hash is None for rc in qrc)
+        if all_none_prepared:
             return True
 
-        highest_pr, highest_pv_hash = max(prepared_values, key=lambda x: x[0])
-        if msg.value_hash != highest_pv_hash:
+        # (2)
+        prepared_values: Dict[Tuple[int, bytes], int] = {}
+        for rc in consensus_msg.justification:
+            if rc.type != MsgType.PREPARE:
+                continue
+            prepared_values[(rc.round, rc.value_hash)] = prepared_values.get((rc.round, rc.value_hash), 0) + 1
+
+        highest_pr, highest_pv_hash = max(prepared_values.keys(), key=lambda x: x[0])
+
+        # Ensure quorum of PREPAREs for highest prepared round/value
+        if prepared_values[(highest_pr, highest_pv_hash)] < self.d.quorum():
             return False
 
-        # Must include quorum of PREPARE messages for (highest_pr, highest_pv_hash)
-        prepare_qc = [j for j in justifications if j.type == MsgType.PREPARE and
-                     j.round == highest_pr and j.value_hash == highest_pv_hash]
-
-        return len(prepare_qc) >= self.quorum_size
-
-    def verify_round_change_justification(self, msg: QBFTMsg, justifications: List[QBFTMsg]) -> bool:
-        """Verify ROUND-CHANGE justification according to JustifyRoundChange predicate."""
-        if msg.prepared_round is None:
-            # No prepared value: no justification needed
-            return len(justifications) == 0
-
-        # Has prepared value: must have quorum of PREPARE messages
-        prepare_justifications = [j for j in justifications if j.type == MsgType.PREPARE and
-                                j.duty == msg.duty and
-                                j.round == msg.prepared_round and
-                                j.value_hash == msg.prepared_value_hash]
-
-        if len(prepare_justifications) < self.quorum_size:
+        # Ensure no ROUND-CHANGE has higher prepared round
+        if any(rc.prepared_round is not None and rc.prepared_round > highest_pr for rc in qrc):
             return False
 
-        # All PREPARE messages must be for the same round and value
-        for prep in prepare_justifications:
-            if prep.round != msg.prepared_round or prep.value_hash != msg.prepared_value_hash:
-                return False
+        # Ensure at least one ROUND-CHANGE with the highest prepared round/value
+        if not any(rc.prepared_round == highest_pr and rc.prepared_value_hash == highest_pv_hash for rc in qrc):
+            return False
+
+        # Ensure PRE-PREPARE value matches value chosen from justifications
+        return highest_pv_hash == msg.value_hash
+
+    def is_justified_round_change(self, consensus_msg: QBFTConsensusMsg) -> bool:
+        """Returns true if the ROUND-CHANGE message's prepared round/value is justified."""
+        msg = consensus_msg.msg
+        if msg.type != MsgType.ROUND_CHANGE:
+            return False
+
+        if len(consensus_msg.justification) == 0 and msg.prepared_round is None and msg.prepared_value_hash is None:
+            return True
+
+        pr = msg.prepared_round
+        pv_hash = msg.prepared_value_hash
+        prepare_justifications = [j for j in consensus_msg.justification if j.type == MsgType.PREPARE and
+                                j.round == pr and
+                                j.value_hash == pv_hash]
+
+        if len(prepare_justifications) < self.d.quorum():
+            return False
 
         return True
 
-    def verify_commit_justification(self, msg: QBFTMsg, justifications: List[QBFTMsg]) -> bool:
-        """Verify COMMIT message has quorum of PREPARE justifications."""
-        prepare_count = sum(1 for j in justifications if j.type == MsgType.PREPARE and
-                           j.duty == msg.duty and j.round == msg.round and j.value_hash == msg.value_hash)
-        return prepare_count >= self.quorum_size
-
-    def verify_decided_justification(self, msg: QBFTMsg, justifications: List[QBFTMsg]) -> bool:
-        """Verify DECIDED message has quorum of COMMIT justifications."""
-        commit_count = sum(1 for j in justifications if j.type == MsgType.COMMIT and
-                          j.duty == msg.duty and j.round == msg.round and j.value_hash == msg.value_hash)
-        return commit_count >= self.quorum_size
-
-    def handle_message(self, consensus_msg: QBFTConsensusMsg) -> List[QBFTMsg]:
-        """Handle an incoming QBFT consensus message using upon rules system."""
+    def is_justified_decided(self, consensus_msg: QBFTConsensusMsg) -> bool:
+        """Returns true if the DECIDED message is justified by quorum of COMMIT messages."""
         msg = consensus_msg.msg
+        if msg.type != MsgType.DECIDED:
+            return False
+
+        commit_justifications = [j for j in consensus_msg.justification
+                                 if j.type == MsgType.COMMIT and
+                                 j.round == msg.round and
+                                 j.value_hash == msg.value_hash]
+
+        if len(commit_justifications) < self.d.quorum():
+            return False
+
+        return True
+
+    def is_justified(self, consensus_msg: QBFTConsensusMsg) -> bool:
+        """Returns true if message is justified or if it does not need justification."""
+        msg = consensus_msg.msg
+        match msg.type:
+            case MsgType.PRE_PREPARE:
+                return self.is_justified_pre_prepare(consensus_msg)
+            case MsgType.PREPARE | MsgType.COMMIT:
+                return True
+            case MsgType.ROUND_CHANGE:
+                return self.is_justified_round_change(consensus_msg)
+            case MsgType.DECIDED:
+                return self.is_justified_decided(consensus_msg)
+            case _:
+                return False
+
+    def _buffer_message(self, consensus_msg: QBFTConsensusMsg) -> None:
+        """Store message in buffer."""
+        if consensus_msg.msg.peer_idx not in self.buffer:
+            self.buffer[consensus_msg.msg.peer_idx] = []
+        self.buffer[consensus_msg.msg.peer_idx].append(consensus_msg)
+
+    def _flatten(self) -> List[QBFTConsensusMsg]:
+        """Returns the buffer as a list containing all the buffered messages and their justifications."""
+        res: List[QBFTConsensusMsg] = []
+        for msgs in self.buffer.values():
+            for msg in msgs:
+                res.append(msg)
+                for j in msg.justification:
+                    # TODO: in Charon we have a buffer of Msg[I,V] interface
+                    # it's neither QBFTMsg nor QBFTConsensusMsg
+                    # here we are storing QBFTConsensusMsg, should we change ?
+                    # maybe we could have a third message which would be the internal
+                    # representation of a message, e.g. Msg
+
+                    # Transform justification QBFTMsg into QBFTConsensusMsg with empty justification
+                    jMsg = QBFTConsensusMsg(msg=j, justification=[], values=[])
+                    res.append(jMsg)
+        return res
+
+    def _classify(self, consensus_msg: QBFTConsensusMsg) -> Tuple[UponRule, List[QBFTMsg]]:
+        """
+        Returns the rule triggered upon receipt of the last message and its justification.
+        Should be called after is_justified() and buffer_message().
+        """
+        msg = consensus_msg.msg
+        match msg.type:
+            case MsgType.DECIDED:
+                return UponRule.JUSTIFIED_DECIDED, consensus_msg.justification
+
+            case MsgType.PRE_PREPARE:
+                if msg.round < self.round:
+                    return UponRule.NOTHING, []
+                return UponRule.JUSTIFIED_PRE_PREPARE, []
+
+            case MsgType.PREPARE:
+                if msg.round != self.round:
+                    return UponRule.NOTHING, []
+
+                prepares = [j for j in self._flatten() if j.msg.type == MsgType.PREPARE and j.msg.round == msg.round and j.msg.value_hash == msg.value_hash]
+                if len(prepares) >= self.d.quorum():
+                    return UponRule.QUORUM_PREPARES, prepares
+
+            case MsgType.COMMIT:
+                if msg.round != self.round:
+                    return UponRule.NOTHING, []
+
+                commits = [j for j in self._flatten() if j.msg.type == MsgType.COMMIT and j.msg.round == msg.round and j.msg.value_hash == msg.value_hash]
+                if len(commits) >= self.d.quorum():
+                    return UponRule.QUORUM_COMMITS, commits
+
+            case MsgType.ROUND_CHANGE:
+                if msg.round < self.round:
+                    return UponRule.NOTHING, []
+
+                all = self._flatten()
+                if msg.round > self.round:
+                    # Check if we have f+1 ROUND-CHANGE messages for rounds > current round
+                    highest_by_source = {} # peer -> highest ROUND-CHANGE message
+                    for m in all:
+                        if m.msg.type != MsgType.ROUND_CHANGE:
+                            continue
+
+                        if m.msg.round <= self.round:
+                            continue
+
+                        if m.msg.peer_idx in highest_by_source and highest_by_source[m.msg.peer_idx].round > m.msg.round:
+                            continue
+
+                        highest_by_source[m.msg.peer_idx] = m
+
+                        if len(highest_by_source) == self.d.faulty() + 1:
+                            break
+
+                    if len(highest_by_source) < self.d.faulty() + 1:
+                        return UponRule.NOTHING, []
+                    else:
+                        return UponRule.F_PLUS_1_ROUND_CHANGES, list(highest_by_source.values())
+
+                # else msg.Round == round
+
+                qrc = [m for m in all if m.msg.type == MsgType.ROUND_CHANGE and m.msg.round == msg.round]
+                if len(qrc) < self.d.quorum():
+                    return UponRule.NOTHING, []
+
+                # Get justified QRC (Algorithm 4:1)
+                justified_qrc: List[QBFTConsensusMsg] = []
+                found_justified = False
+
+                # First check for quorum none prepared
+                none_prepared_qrc = [
+                    m for m in all
+                    if (m.msg.type == MsgType.ROUND_CHANGE and
+                        m.msg.round == msg.round and
+                        m.msg.prepared_round is None and
+                        m.msg.prepared_value_hash is None)
+                ]
+
+                if len(none_prepared_qrc) >= self.d.quorum():
+                    justified_qrc = none_prepared_qrc
+                    found_justified = True
+                else:
+                    # Get all prepare quorums
+                    # (round, value_hash) -> {peer_idx: msg}
+                    prepare_sets: Dict[Tuple[int, bytes], Dict[int, QBFTMsg]] = {}
+
+                    for m in all:
+                        if m.msg.type != MsgType.PREPARE:
+                            continue
+
+                        key = (m.msg.round, m.msg.value_hash)
+                        if key not in prepare_sets:
+                            prepare_sets[key] = {}
+                        prepare_sets[key][m.msg.peer_idx] = m.msg
+
+                    # Check each prepare quorum
+                    for msgs_dict in prepare_sets.values():
+                        if len(msgs_dict) < self.d.quorum():
+                            continue
+
+                        prepares = list(msgs_dict.values())
+                        qrc_candidates = []
+                        has_highest_prepared = False
+                        pr = prepares[0].round
+                        pv = prepares[0].value_hash
+                        used_sources = set()
+
+                        for rc in qrc:
+                            if rc.msg.prepared_round is not None and rc.msg.prepared_round > pr:
+                                continue
+
+                            if rc.msg.peer_idx in used_sources:
+                                continue
+
+                            if rc.msg.prepared_round == pr and rc.msg.prepared_value_hash == pv:
+                                has_highest_prepared = True
+
+                            qrc_candidates.append(rc)
+                            used_sources.add(rc.msg.peer_idx)
+
+                        if len(qrc_candidates) >= self.d.quorum() and has_highest_prepared:
+                            justified_qrc = qrc_candidates + prepares
+                            found_justified = True
+                            break
+
+                if not found_justified:
+                    return UponRule.UNJUST_QUORUM_ROUND_CHANGES, []
+
+                if not self.d.is_leader(self.duty, msg.round, self.peer):
+                    return UponRule.NOTHING, []
+
+                return UponRule.QUORUM_ROUND_CHANGES, justified_qrc
+
+            case _:
+                raise ValueError("Unknown message type")
+
+        return UponRule.NOTHING, []
+
+    def _sign_message(self, msg: QBFTMsg) -> bytes:
+        """Mock signing of a message"""
+        # TODO: Implement real signing
+        return b'\x00' * 65  # Mock signature
+
+    def _broadcast_message(self, type: MsgType, value_hash: bytes, justification: Optional[List[QBFTMsg]] = None) -> List[QBFTConsensusMsg]:
+        """Broadcast non-ROUND-CHANGE messages for current round"""
+        res: List[QBFTConsensusMsg] = []
+        for _ in range(self.d.nodes):
+            msg = QBFTMsg(
+                    type=type,
+                    duty=self.duty,
+                    round=self.round,
+                    peer_idx=self.peer,
+                    value_hash=value_hash
+                )
+            msg.signature = self._sign_message(msg)
+            res.append(QBFTConsensusMsg(
+                msg=msg,
+                justification=justification or [],
+                values=[self.mapping.get(value_hash)] if self.mapping.get(value_hash) else []
+            ))
+        return res
+
+    def _broadcast_round_change(self) -> List[QBFTConsensusMsg]:
+        """Broadcast ROUND_CHANGE message for current round"""
+        res = []
+        for _ in range(self.d.nodes):
+            msg = QBFTMsg(
+                    type=MsgType.ROUND_CHANGE,
+                    duty=self.duty,
+                    round=self.round,
+                    peer_idx=self.peer,
+                    prepared_round=self.prepared_round,
+                    prepared_value_hash=self.prepared_value_hash,
+                )
+            msg.signature = self._sign_message(msg)
+            res.append(QBFTConsensusMsg(
+                msg=msg,
+                justification=self.prepared_justification,
+                values=[self.mapping.get(self.prepared_value_hash)] if self.mapping.get(self.prepared_value_hash) else []
+            ))
+        return res
+
+    def _broadcast_own_pre_prepare(self, justification: List[QBFTMsg]) -> List[QBFTConsensusMsg]:
+        if justification is None:
+            raise ValueError("Justification cannot be None")
+
+        return self._broadcast_message(MsgType.PRE_PREPARE, self._hash_value(self.proposal_value), justification)
+
+    def _store_value_mapping(self, values: List[Any]):
+        for v in values:
+            self.mapping[self._hash_value(v)] = v
+
+    def _change_round(self, round: int):
+        """Change to a new round if round is greater than current."""
+        if round == self.round:
+            return
+
+        self.round = round
+        self.dedupRules = {}
+
+    def handle_message(self, consensus_msg: QBFTConsensusMsg) -> List[QBFTConsensusMsg]:
+        """Handle an incoming QBFT consensus message using upon rules."""
+        msg = consensus_msg.msg
+
+        # TODO In Charon this happens in the transport layer
+        # What to do ?
+        self._store_value_mapping(consensus_msg.values)
 
         # Only handle messages for our duty
         if msg.duty != self.duty:
             return []
 
-        # Filter out unjustified messages early
-        if consensus_msg.justification and not self.is_justified(consensus_msg):
+        if len(self.q_commit) > 0:
+            if msg.peer_idx != self.peer and msg.type == MsgType.ROUND_CHANGE:
+                return self._broadcast_message(MsgType.ROUND_CHANGE, self.q_commit[0].value_hash,self.q_commit)
             return []
 
-        # Store the message first
-        self._store_message(msg)
+        if not self.is_justified(consensus_msg):
+            return []
 
-        # Extract the value from the consensus message if available
-        extracted_value = None
-        if consensus_msg.values:
-            extracted_value = consensus_msg.values[0]
+        self._buffer_message(consensus_msg)
 
-        # Classify message and get triggered rule
-        rule, justification = self._classify_message(msg)
-
-        # Process based on upon rule
-        return self._process_upon_rule(rule, msg, justification, extracted_value)
-
-    def _store_message(self, msg: QBFTMsg) -> None:
-        """Store message in appropriate buffer."""
-        if msg.type == MsgType.PRE_PREPARE:
-            self.received_pre_prepares[msg.round] = msg
-        elif msg.type == MsgType.PREPARE:
-            if msg.round not in self.received_prepares:
-                self.received_prepares[msg.round] = []
-            # Avoid duplicates from same peer
-            if not any(p.peer_idx == msg.peer_idx for p in self.received_prepares[msg.round]):
-                self.received_prepares[msg.round].append(msg)
-        elif msg.type == MsgType.COMMIT:
-            if msg.round not in self.received_commits:
-                self.received_commits[msg.round] = []
-            # Avoid duplicates from same peer
-            if not any(c.peer_idx == msg.peer_idx for c in self.received_commits[msg.round]):
-                self.received_commits[msg.round].append(msg)
-        elif msg.type == MsgType.ROUND_CHANGE:
-            if msg.round not in self.received_round_changes:
-                self.received_round_changes[msg.round] = []
-            # Avoid duplicates from same peer
-            if not any(rc.peer_idx == msg.peer_idx for rc in self.received_round_changes[msg.round]):
-                self.received_round_changes[msg.round].append(msg)
-        elif msg.type == MsgType.DECIDED:
-            # Only store if not already decided
-            if not self.is_decided():
-                self.received_decided.append(msg)
-
-    def _classify_message(self, msg: QBFTMsg) -> Tuple[UponRule, List[QBFTMsg]]:
-        """Classify message and return triggered rule with justification."""
-        if msg.type == MsgType.DECIDED:
-            return UponRule.JUSTIFIED_DECIDED, [msg]
-
-        elif msg.type == MsgType.PRE_PREPARE:
-            # Only ignore old rounds, since PRE-PREPARE is justified we may jump ahead
-            if msg.round < self.current_round:
-                return UponRule.NOTHING, []
-            return UponRule.JUSTIFIED_PRE_PREPARE, []
-
-        elif msg.type == MsgType.PREPARE:
-            # Ignore other rounds, since PREPARE isn't justified
-            if msg.round != self.current_round:
-                return UponRule.NOTHING, []
-
-            # Check if we now have quorum prepares for this round and value
-            if self.has_quorum_prepares_for_round_value(msg.round, msg.value_hash):
-                prepares = self._filter_by_round_and_value(
-                    self.received_prepares.get(msg.round, []),
-                    msg.round,
-                    msg.value_hash
-                )
-                return UponRule.QUORUM_PREPARES, prepares
-
-        elif msg.type == MsgType.COMMIT:
-            # Ignore other rounds, since COMMIT isn't justified
-            if msg.round != self.current_round:
-                return UponRule.NOTHING, []
-
-            # Check if we now have quorum commits for this round and value
-            if self.has_quorum_commits_for_round_value(msg.round, msg.value_hash):
-                commits = self._filter_by_round_and_value(
-                    self.received_commits.get(msg.round, []),
-                    msg.round,
-                    msg.value_hash
-                )
-                return UponRule.QUORUM_COMMITS, commits
-
-        elif msg.type == MsgType.ROUND_CHANGE:
-            # Only ignore old rounds
-            if msg.round < self.current_round:
-                return UponRule.NOTHING, []
-
-            if msg.round > self.current_round:
-                # Check for F+1 higher round changes
-                if self._has_f_plus_1_round_changes(msg.round):
-                    return UponRule.F_PLUS_1_ROUND_CHANGES, []
-                return UponRule.NOTHING, []
-
-            # msg.round == current_round
-            round_changes = self.received_round_changes.get(msg.round, [])
-            if len(round_changes) >= self.quorum_size:
-                # Check if justified
-                if self._is_justified_quorum_round_changes(round_changes):
-                    return UponRule.QUORUM_ROUND_CHANGES, round_changes
-                else:
-                    return UponRule.UNJUST_QUORUM_ROUND_CHANGES, []
-
-        return UponRule.NOTHING, []
-
-    def _filter_by_round_and_value(self, msgs: List[QBFTMsg], round_num: int, value_hash: bytes) -> List[QBFTMsg]:
-        """Filter messages by round and value hash, ensuring unique sources."""
-        seen_sources = set()
-        result = []
-        for msg in msgs:
-            if (msg.round == round_num and
-                msg.value_hash == value_hash and
-                msg.peer_idx not in seen_sources):
-                seen_sources.add(msg.peer_idx)
-                result.append(msg)
-        return result
-
-    def _has_f_plus_1_round_changes(self, target_round: int) -> bool:
-        """Check if we have F+1 round changes for the target round or higher."""
-        count = 0
-        seen_sources = set()
-        for round_num, msgs in self.received_round_changes.items():
-            if round_num >= target_round:
-                for msg in msgs:
-                    if msg.peer_idx not in seen_sources:
-                        seen_sources.add(msg.peer_idx)
-                        count += 1
-                        if count >= self.max_byzantine_faults + 1:
-                            return True
-        return False
-
-    def _is_justified_quorum_round_changes(self, round_changes: List[QBFTMsg]) -> bool:
-        """Check if quorum of round changes is justified."""
-        # Simplified justification check - in real implementation would validate
-        # that prepared rounds/values are properly justified
-        return len(round_changes) >= self.quorum_size
-
-    def _process_upon_rule(
-        self,
-        rule: UponRule,
-        msg: QBFTMsg,
-        value: Optional[Any] = None
-    ) -> List[QBFTMsg]:
-        """Process upon rule and return messages to send."""
+        rule, justification = self._classify(consensus_msg)
         if rule == UponRule.NOTHING:
             return []
 
-        elif rule == UponRule.JUSTIFIED_PRE_PREPARE:
-            if msg.round > self.current_round:
-                # Jump to higher round
-                self.current_round = msg.round
-                self.round_start_time = time.time()
+        if (rule, self.round) in self.dedupRules:
+            return []
+        self.dedupRules[(rule, self.round)] = True
+        print(rule)
+        match rule:
+            case UponRule.JUSTIFIED_PRE_PREPARE:
+                self._change_round(msg.round)
 
-            # Send PREPARE if we can prepare for this value
-            if self.can_prepare_for_round_value(msg.round, msg.value_hash):
-                self.current_value = value
-                self.current_value_hash = msg.value_hash
+                # TODO stop previous timer and start new one
 
-                prepare = self.create_prepare(
-                    value_hash=msg.value_hash,
-                    round_num=msg.round
-                )
-                return [prepare]
+                return self._broadcast_message(MsgType.PREPARE, msg.value_hash, None)
 
-        elif rule == UponRule.QUORUM_PREPARES:
-            # Update prepared state when we reach quorum of prepares
-            if msg.round > (self.prepared_round or -1):
+            case UponRule.QUORUM_PREPARES:
+                
                 self.prepared_round = msg.round
-                self.prepared_value = value  # Use the value if provided
                 self.prepared_value_hash = msg.value_hash
+                self.prepared_justification = justification
 
-            # Send COMMIT if we can commit for this value
-            if self.can_commit_for_round_value(msg.round, msg.value_hash):
-                commit = self.create_commit(
-                    value_hash=msg.value_hash,
-                    round_num=msg.round,
-                    prepared_round=msg.round
-                )
-                return [commit]
+                return self._broadcast_message(MsgType.COMMIT, msg.value_hash, None)
 
-        elif rule == UponRule.QUORUM_COMMITS:
-            # Mark as decided when we have quorum commits (even if already decided)
-            if self.has_quorum_commits_for_round_value(msg.round, msg.value_hash):
-                if not self.is_decided():
-                    decided = self.create_decided(
-                        value_hash=msg.value_hash,
-                        round_num=msg.round
-                    )
-                    # Mark ourselves as decided by storing our own DECIDED message
-                    self.received_decided.append(decided)
-                    return [decided]
+            case UponRule.QUORUM_COMMITS:
+                self._change_round(msg.round)
+
+                self.q_commit = justification
+
+                # TODO stop previous timer and start new one
+
+                # TODO? Call external decide function here
+
+            case UponRule.JUSTIFIED_DECIDED:
+                self._change_round(msg.round)
+
+                self.q_commit = justification
+
+                # TODO stop previous timer and start new one
+
+                # TODO? Call external decide function here
+
+            case UponRule.F_PLUS_1_ROUND_CHANGES:
+                # Find next minimum round from received round change messages
+                if len(justification) < self.d.faulty() + 1:
+                    raise ValueError("Frc too short")
+
+                # Get the smallest round in the set
+                rmin = float('inf')
+                for j in justification:
+                    if j.type != MsgType.ROUND_CHANGE:
+                        raise ValueError("Frc contain non-round change")
+                    elif j.round <= self.round:
+                        raise ValueError("Frc round not in future")
+
+                    if rmin > j.round:
+                        rmin = j.round
+
+                self._change_round(int(rmin))
+
+                # TODO stop previous timer and start new one
+
+                return self._broadcast_round_change()
+
+            case UponRule.QUORUM_ROUND_CHANGES:
+
+                # Extracts the single justified Pr and Pv from quorum PREPARES in list of messages
+                prepared_values: Dict[Tuple[int, bytes], int] = {}
+                for rc in justification:
+                    if rc.type != MsgType.PREPARE:
+                        continue
+                    if rc.prepared_round is not None and rc.prepared_value_hash is not None:
+                        prepared_values[(rc.prepared_round, rc.prepared_value_hash)] = prepared_values.get((rc.prepared_round, rc.prepared_value_hash), 0) + 1
+
+                highest_pr, highest_pv_hash = max(prepared_values.keys(), key=lambda x: x[0])
+
+                # Ensure quorum of PREPAREs for highest prepared round/value or send own PRE-PREPARE
+                if prepared_values[(highest_pr, highest_pv_hash)] >= self.d.quorum():
+                    return self._broadcast_message(MsgType.PRE_PREPARE, highest_pv_hash, justification)
                 else:
-                    # Already decided, but we still need to mark this state
-                    # (in case we received commits after being decided by other means)
-                    pass
+                    return self._broadcast_own_pre_prepare(justification)
 
-        elif rule == UponRule.F_PLUS_1_ROUND_CHANGES:
-            # Jump to higher round when we see F+1 round changes
-            highest_round = max(
-                round_num for round_num in self.received_round_changes.keys()
-                if round_num > self.current_round
-            )
-            if highest_round > self.current_round:
-                self.current_round = highest_round
-                self.round_start_time = time.time()
+            case UponRule.UNJUST_QUORUM_ROUND_CHANGES:
+                return []
 
-                round_change = self.create_round_change(
-                    new_round=self.current_round
-                )
-                return [round_change]
-
-        elif rule == UponRule.QUORUM_ROUND_CHANGES:
-            # Start new round
-            if msg.round >= self.current_round:
-                self.current_round = msg.round
-                self.round_start_time = time.time()
-
-                # If we're the leader, send PRE-PREPARE
-                if self.compute_leader(self.current_round) == self.peer_idx:
-                    value, value_hash = self._determine_proposal_value(self.current_round)
-                    preprepare = self.create_pre_prepare(
-                        value=value,
-                        value_hash=value_hash,
-                        round_num=self.current_round
-                    )
-                    return [preprepare]
-
-        elif rule == UponRule.UNJUST_QUORUM_ROUND_CHANGES:
-            pass
-
-        elif rule == UponRule.JUSTIFIED_DECIDED:
-            # Accept justified decided message - mark consensus as complete
-            if not self.is_decided():
-                # Store the received DECIDED message to mark ourselves as decided
-                self.received_decided.append(msg)
-            # Consensus is complete - no further messages needed
+            case _:
+                raise ValueError("Unknown upon rule", rule)
 
         return []
-
-    def _determine_proposal_value(self, round_num: int) -> Tuple[Any, bytes]:
-        """Determine value to propose"""
-        # Step 1: Find the highest prepared round from round change messages
-        highest_prepared_round = -1
-        highest_prepared_value = None
-        highest_prepared_value_hash = None
-
-        # Check round change messages for prepared values
-        for rc_round, round_changes in self.received_round_changes.items():
-            if rc_round <= round_num:  # Only consider round changes for current or past rounds
-                for rc_msg in round_changes:
-                    if (rc_msg.prepared_round is not None and
-                        rc_msg.prepared_value_hash is not None and
-                        rc_msg.prepared_round > highest_prepared_round):
-
-                        highest_prepared_round = rc_msg.prepared_round
-                        highest_prepared_value_hash = rc_msg.prepared_value_hash
-                        # TODO find real value
-                        highest_prepared_value = f"prepared_value_round_{rc_msg.prepared_round}".encode()
-
-        # Step 2: Check our own prepared state
-        if (self.prepared_round is not None and
-            self.prepared_value_hash is not None and
-            self.prepared_round > highest_prepared_round):
-
-            highest_prepared_round = self.prepared_round
-            highest_prepared_value = self.prepared_value
-            highest_prepared_value_hash = self.prepared_value_hash
-
-        # Step 3: Return the highest prepared value or propose new value
-        if highest_prepared_value is not None:
-            return highest_prepared_value, highest_prepared_value_hash
-
-        # Step 4: No prepared values found, propose our own value
-        if self.proposal_value is not None and self.proposal_value_hash is not None:
-            return self.proposal_value, self.proposal_value_hash
-
-        # TODO get real value
-        new_value = f"new_proposal_round_{round_num}".encode()
-        new_value_hash = self._compute_value_hash(new_value)
-        return new_value, new_value_hash
-
-    def _compute_value_hash(self, value: Any) -> bytes:
-        """Compute a mock 32-byte hash for the given value."""
-        if isinstance(value, bytes):
-            value_str = value.decode('utf-8', errors='ignore')
-        else:
-            value_str = str(value)
-
-        # TODO
-        hash_input = value_str.encode('utf-8')
-        hash_bytes = hash_input[:32] if len(hash_input) >= 32 else hash_input
-        return hash_bytes.ljust(32, b'\x00')
-
-    def set_proposal_value(self, value: Any) -> None:
-        """Set the value this node wants to propose when it becomes leader."""
-        self.proposal_value = value
-        self.proposal_value_hash = self._compute_value_hash(value)
-
-    def create_pre_prepare(self, value: Any, value_hash: bytes, round_num: int) -> QBFTMsg:
-        """Create a PRE_PREPARE message."""
-        return QBFTMsg(
-            type=MsgType.PRE_PREPARE,
-            duty=self.duty,
-            peer_idx=self.peer_idx,
-            round=round_num,
-            prepared_round=None,
-            signature=self._sign_message(round_num, value_hash),
-            value_hash=value_hash,
-            prepared_value_hash=None
-        )
-
-    def create_prepare(self, value_hash: bytes, round_num: int) -> QBFTMsg:
-        """Create a PREPARE message."""
-        return QBFTMsg(
-            type=MsgType.PREPARE,
-            duty=self.duty,
-            peer_idx=self.peer_idx,
-            round=round_num,
-            prepared_round=None,
-            signature=self._sign_message(round_num, value_hash),
-            value_hash=value_hash,
-            prepared_value_hash=None
-        )
-
-    def create_commit(self, value_hash: bytes, round_num: int, prepared_round: int) -> QBFTMsg:
-        """Create a COMMIT message."""
-        return QBFTMsg(
-            type=MsgType.COMMIT,
-            duty=self.duty,
-            peer_idx=self.peer_idx,
-            round=round_num,
-            prepared_round=prepared_round,
-            signature=self._sign_message(round_num, value_hash),
-            value_hash=value_hash,
-            prepared_value_hash=value_hash
-        )
-
-    def create_round_change(
-        self,
-        new_round: int,
-        prepared_round: Optional[int] = None,
-        prepared_value_hash: Optional[bytes] = None
-    ) -> QBFTMsg:
-        """Create a ROUND_CHANGE message."""
-        return QBFTMsg(
-            type=MsgType.ROUND_CHANGE,
-            duty=self.duty,
-            peer_idx=self.peer_idx,
-            round=new_round,
-            prepared_round=prepared_round,
-            signature=self._sign_message(new_round, prepared_value_hash or b""),
-            value_hash=b"\x00" * 32,  # No specific value in round change
-            prepared_value_hash=prepared_value_hash
-        )
-
-    def create_decided(self, value_hash: bytes, round_num: int) -> QBFTMsg:
-        """Create a DECIDED message."""
-        return QBFTMsg(
-            type=MsgType.DECIDED,
-            duty=self.duty,
-            peer_idx=self.peer_idx,
-            round=round_num,
-            prepared_round=round_num,
-            signature=self._sign_message(round_num, value_hash),
-            value_hash=value_hash,
-            prepared_value_hash=value_hash
-        )
-
-    def _sign_message(self, round_num: int, value_hash: bytes) -> bytes:
-        """Create a mock signature for a message."""
-        # TODO
-        # In real implementation, this would use proper cryptographic signing
-        signature_data = f"{self.duty.slot}_{self.duty.type}_{round_num}_{value_hash.hex()}"
-        signature_bytes = signature_data.encode()[:65]
-        return signature_bytes.ljust(65, b'\x00')
-
-    def check_timeout(self) -> Optional[QBFTMsg]:
-        """Check for round timeout and create round change if needed."""
-        if self.is_decided():
-            return None
-
-        current_time = time.time()
-        elapsed = current_time - self.round_start_time
-        timeout = self.timer.calculate_timeout(self.current_round)
-
-        if elapsed > timeout:
-            # Create round change for next round
-            next_round = self.current_round + 1
-            round_change = self.create_round_change(
-                new_round=next_round,
-                prepared_round=self.prepared_round,
-                prepared_value_hash=self.prepared_value_hash
-            )
-
-            # Update to new round
-            self.current_round = next_round
-            self.round_start_time = current_time
-
-            return round_change
-
-        return None
