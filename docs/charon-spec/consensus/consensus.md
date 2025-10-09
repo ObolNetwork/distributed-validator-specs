@@ -211,7 +211,7 @@ class QBFTConsensus:
     buffer: Dict[int, List[QBFTConsensusMsg]] = field(default_factory=dict)
     """Storer for peer messages."""
 
-    dedupRules: Dict[Tuple[UponRule, int], bool] = field(default_factory=dict)
+    dedup_rules: Dict[Tuple[UponRule, int], bool] = field(default_factory=dict)
     """Deduplication for rules triggered per round."""
 
     round_start_time: float = field(default_factory=time.time)

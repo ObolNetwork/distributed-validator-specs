@@ -18,7 +18,7 @@ from .protocol import (
     QBFTConsensus,
     UponRule,
 )
-from .transport import Transport, PeerInfo
+from .transport import PeerInfo, Transport
 
 __all__ = [
     "Definition",
@@ -26,7 +26,7 @@ __all__ = [
     "QBFTMsg",
     "QBFTConsensusMsg",
     "QBFTConsensus",
-    "UponRule", 
+    "UponRule",
     "Transport",
     "PeerInfo",
 ]

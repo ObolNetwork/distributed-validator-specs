@@ -1,4 +1,11 @@
+"""
+QBFT consensus definition and parameters.
+
+This module defines the consensus parameters and validation logic for QBFT.
+"""
+
 import math
+
 from dv_spec.types.base import StrictBaseModel
 from dv_spec.types.duty import Duty
 

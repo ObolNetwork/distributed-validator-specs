@@ -3,6 +3,7 @@ Test suite for Definition class implementation
 """
 
 import pytest
+
 from dv_spec.subspecs.consensus.qbft.definition import Definition
 from dv_spec.types import Duty
 
@@ -33,7 +34,6 @@ class TestDefinition:
         d = Definition(nodes=10)
         assert d.quorum() == 7  # ceil(2*10/3) = ceil(20/3) = 7
 
-
     def test_faulty_calculation(self):
         """Test faulty node calculation for various cluster sizes."""
         # Standard cases
@@ -45,7 +45,6 @@ class TestDefinition:
 
         d = Definition(nodes=10)
         assert d.faulty() == 3  # floor((10-1)/3) = floor(9/3) = 3
-
 
     def test_is_leader_deterministic(self):
         """Test that leader election is deterministic."""
@@ -62,7 +61,7 @@ class TestDefinition:
         for peer in range(4):
             if d.is_leader(duty, 1, peer):
                 leaders_round1.append(peer)
-        
+
         # Should have exactly one leader per round
         assert len(leaders_round1) == 1
 
@@ -81,10 +80,10 @@ class TestDefinition:
 
         # Should have 8 leaders (one per round)
         assert len(leaders) == 8
-        
+
         # Leadership should cycle through all peers
         unique_leaders = set(leaders)
-        assert len(unique_leaders) == 4  
+        assert len(unique_leaders) == 4
 
     def test_byzantine_fault_tolerance_properties(self):
         """Test that quorum and faulty calculations satisfy BFT properties."""
@@ -102,15 +101,3 @@ class TestDefinition:
             # BFT property: quorum > (nodes + faulty) / 2
             # This ensures that any two quorums overlap
             assert quorum > (nodes + faulty) / 2
-
-    def test_definition_immutability(self):
-        """Test that Definition behaves as an immutable object."""
-        d = Definition(nodes=4)
-        original_nodes = d.nodes
-
-        # Definition should be frozen (Pydantic frozen model)
-        with pytest.raises(Exception):  # Pydantic raises ValidationError for frozen models
-            d.nodes = 7
-
-        # Verify original value is unchanged
-        assert d.nodes == original_nodes

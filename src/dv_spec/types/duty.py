@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class DutyType(IntEnum):
     """Types of duties a validator can have."""
+
     UNKNOWN = 0
     PROPOSER = 1
     ATTESTER = 2
@@ -25,6 +26,7 @@ class DutyType(IntEnum):
 
 class Duty(BaseModel):
     """A duty assigned to a validator."""
+
     slot: int = Field(description="The slot number for the duty.")
     type: DutyType = Field(description="The type of duty, represented as an integer.")
 

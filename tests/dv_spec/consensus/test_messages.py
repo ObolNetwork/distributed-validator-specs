@@ -21,8 +21,8 @@ class TestQBFTMsg:
             round=1,
             prepared_round=None,
             signature=b"s" * 65,  # 65 bytes
-            value_hash=b"a" * 32, # 32 bytes
-            prepared_value_hash=None
+            value_hash=b"a" * 32,  # 32 bytes
+            prepared_value_hash=None,
         )
 
         assert msg.type == MsgType.PRE_PREPARE
@@ -45,7 +45,7 @@ class TestQBFTMsg:
             prepared_round=None,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=None
+            prepared_value_hash=None,
         )
 
     def test_commit_message_creation(self):
@@ -59,7 +59,7 @@ class TestQBFTMsg:
             prepared_round=1,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=b"a" * 32
+            prepared_value_hash=b"a" * 32,
         )
 
     def test_round_change_message_creation(self):
@@ -73,7 +73,7 @@ class TestQBFTMsg:
             prepared_round=1,
             signature=b"s" * 65,
             value_hash=b"\x00" * 32,
-            prepared_value_hash=b"a" * 32
+            prepared_value_hash=b"a" * 32,
         )
 
     def test_decided_message_creation(self):
@@ -87,7 +87,7 @@ class TestQBFTMsg:
             prepared_round=1,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=b"a" * 32
+            prepared_value_hash=b"a" * 32,
         )
 
     def test_message_equality(self):
@@ -102,7 +102,7 @@ class TestQBFTMsg:
             prepared_round=None,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=None
+            prepared_value_hash=None,
         )
 
         msg2 = QBFTMsg(
@@ -113,7 +113,7 @@ class TestQBFTMsg:
             prepared_round=None,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=None
+            prepared_value_hash=None,
         )
 
         msg3 = QBFTMsg(
@@ -124,7 +124,7 @@ class TestQBFTMsg:
             prepared_round=None,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=None
+            prepared_value_hash=None,
         )
 
         assert msg1 == msg2
