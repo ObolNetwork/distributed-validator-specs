@@ -14,7 +14,7 @@ from dv_spec.types import Duty
 class TestTransport:
     """Test cases for the Transport class."""
 
-    def test_transport_initialization(self):
+    def test_transport_initialization(self) -> None:
         """Test Transport initialization."""
         private_key = b"test_private_key" * 2  # 32 bytes
         peers = [
@@ -27,7 +27,7 @@ class TestTransport:
         assert transport.num_peers == 4
         assert transport.values == {}
 
-    def test_set_values(self):
+    def test_set_values(self) -> None:
         """Test setting value mappings."""
         peers = [
             PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(4)
@@ -50,7 +50,7 @@ class TestTransport:
         expected = {b"hash1": b"value1", b"hash2": b"value2", b"hash3": b"value3"}
         assert transport.values == expected
 
-    def test_get_value(self):
+    def test_get_value(self) -> None:
         """Test retrieving values by hash."""
 
         peers = [
@@ -69,7 +69,7 @@ class TestTransport:
         assert transport.get_value(b"hash2") == {"data": "complex"}
         assert transport.get_value(b"hash3") is None
 
-    def test_sign_message_basic(self):
+    def test_sign_message_basic(self) -> None:
         """Test basic message signing functionality."""
 
         peers = [
@@ -93,7 +93,7 @@ class TestTransport:
         assert isinstance(signature, bytes)
         assert len(signature) == 65
 
-    def test_sign_message_with_existing_signature_fails(self):
+    def test_sign_message_with_existing_signature_fails(self) -> None:
         """Test that signing fails if message already has signature."""
 
         peers = [
@@ -120,7 +120,7 @@ class TestTransport:
         ):
             transport._sign_message(msg)
 
-    def test_broadcast_message_prepare(self):
+    def test_broadcast_message_prepare(self) -> None:
         """Test broadcasting PREPARE messages."""
 
         peers = [
@@ -133,7 +133,7 @@ class TestTransport:
         transport.set_values({value_hash: b"test_value"})
 
         duty = Duty(slot=100, type=1)
-        justification = []
+        justification: list[QBFTMsg] = []
 
         # Test broadcast
         result = transport.broadcast_message(
@@ -156,11 +156,12 @@ class TestTransport:
             assert consensus_msg.msg.peer_idx == 0
             assert consensus_msg.msg.round == 1
             assert consensus_msg.msg.value_hash == value_hash
+            assert consensus_msg.msg.signature is not None
             assert len(consensus_msg.msg.signature) == 65
             assert consensus_msg.justification == justification
             assert b"test_value" in consensus_msg.values
 
-    def test_broadcast_pre_prepare(self):
+    def test_broadcast_pre_prepare(self) -> None:
         """Test broadcasting PRE_PREPARE messages."""
 
         peers = [
@@ -198,11 +199,12 @@ class TestTransport:
             assert consensus_msg.msg.peer_idx == 2
             assert consensus_msg.msg.round == 2
             assert consensus_msg.msg.value_hash == value_hash
+            assert consensus_msg.msg.signature is not None
             assert len(consensus_msg.msg.signature) == 65
             assert consensus_msg.justification == justification
             assert b"proposal_value" in consensus_msg.values
 
-    def test_empty_peers_list(self):
+    def test_empty_peers_list(self) -> None:
         """Test transport with empty peers list."""
 
         transport = Transport(private_key=b"key" * 8, peers=[])
@@ -217,7 +219,7 @@ class TestTransport:
 
         assert result == []
 
-    def test_peer_info_creation(self):
+    def test_peer_info_creation(self) -> None:
         """Test creating PeerInfo instances."""
 
         peer = PeerInfo(peer_idx=0, public_key=b"test_key", peer_id="peer_0")
@@ -225,7 +227,7 @@ class TestTransport:
         assert peer.public_key == b"test_key"
         assert peer.peer_id == "peer_0"
 
-    def test_peer_info_equality(self):
+    def test_peer_info_equality(self) -> None:
         """Test PeerInfo equality."""
 
         peer1 = PeerInfo(peer_idx=0, public_key=b"test_key", peer_id="peer_0")
@@ -235,7 +237,7 @@ class TestTransport:
         assert peer1 == peer2
         assert peer1 != peer3
 
-    def test_transport_private_key_access(self):
+    def test_transport_private_key_access(self) -> None:
         """Test that private key is properly stored and accessible."""
 
         private_key = b"secret_key_bytes_here_32_chars"
@@ -246,7 +248,7 @@ class TestTransport:
 
         assert transport.private_key == private_key
 
-    def test_peers_list_access(self):
+    def test_peers_list_access(self) -> None:
         """Test that peers list is properly stored and accessible."""
 
         peers = [

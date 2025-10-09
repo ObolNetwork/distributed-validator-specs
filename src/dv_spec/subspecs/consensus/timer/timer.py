@@ -187,17 +187,17 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
             self.duty is not None and self.duty.type == DutyType.PROPOSER and round_num == 1
         )  # Protocol starts at round 1
 
-    def reset_round(self, round_num: int):
+    def reset_round(self, round_num: int) -> None:
         """Reset the timeout tracking for a specific round."""
         if round_num in self.first_deadlines:
             del self.first_deadlines[round_num]
 
-    def clear_all_rounds(self):
+    def clear_all_rounds(self) -> None:
         """Clear all round timeout tracking."""
         self.first_deadlines.clear()
 
 
-def create_timer(timer_type: TimerType, duty: Duty = None) -> RoundTimer:
+def create_timer(timer_type: TimerType, duty: Duty) -> RoundTimer:
     """Factory function to create timer instances."""
     if timer_type == TimerType.INCREASING:
         return IncreasingRoundTimer(duty)
@@ -209,7 +209,7 @@ def create_timer(timer_type: TimerType, duty: Duty = None) -> RoundTimer:
         raise ValueError(f"Unknown timer type: {timer_type}")
 
 
-def get_default_timer(duty: Duty = None) -> RoundTimer:
+def get_default_timer(duty: Duty) -> RoundTimer:
     """
     Get the default timer type for distributed consensus.
 

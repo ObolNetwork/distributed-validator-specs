@@ -11,7 +11,7 @@ from dv_spec.types import Duty, DutyType
 class TestQBFTMsg:
     """Test QBFT message functionality."""
 
-    def test_pre_prepare_message_creation(self):
+    def test_pre_prepare_message_creation(self) -> None:
         """Test creating a PRE-PREPARE message."""
         duty = Duty(slot=100, type=DutyType.PROPOSER)
         msg = QBFTMsg(
@@ -30,11 +30,11 @@ class TestQBFTMsg:
         assert msg.peer_idx == 0
         assert msg.round == 1
         assert msg.prepared_round is None
-        assert len(msg.signature) == 65
-        assert len(msg.value_hash) == 32
+        assert msg.signature is not None and len(msg.signature) == 65
+        assert msg.value_hash is not None and len(msg.value_hash) == 32
         assert msg.prepared_value_hash is None
 
-    def test_prepare_message_creation(self):
+    def test_prepare_message_creation(self) -> None:
         """Test creating a PREPARE message."""
         duty = Duty(slot=100, type=DutyType.PROPOSER)
         QBFTMsg(
@@ -48,7 +48,7 @@ class TestQBFTMsg:
             prepared_value_hash=None,
         )
 
-    def test_commit_message_creation(self):
+    def test_commit_message_creation(self) -> None:
         """Test creating a COMMIT message."""
         duty = Duty(slot=100, type=DutyType.PROPOSER)
         QBFTMsg(
@@ -62,7 +62,7 @@ class TestQBFTMsg:
             prepared_value_hash=b"a" * 32,
         )
 
-    def test_round_change_message_creation(self):
+    def test_round_change_message_creation(self) -> None:
         """Test creating a ROUND_CHANGE message."""
         duty = Duty(slot=100, type=DutyType.PROPOSER)
         QBFTMsg(
@@ -76,7 +76,7 @@ class TestQBFTMsg:
             prepared_value_hash=b"a" * 32,
         )
 
-    def test_decided_message_creation(self):
+    def test_decided_message_creation(self) -> None:
         """Test creating a DECIDED message."""
         duty = Duty(slot=100, type=DutyType.PROPOSER)
         QBFTMsg(
@@ -90,7 +90,7 @@ class TestQBFTMsg:
             prepared_value_hash=b"a" * 32,
         )
 
-    def test_message_equality(self):
+    def test_message_equality(self) -> None:
         """Test message equality comparison."""
         duty = Duty(slot=100, type=DutyType.PROPOSER)
 
@@ -134,7 +134,7 @@ class TestQBFTMsg:
 class TestMsgType:
     """Test MsgType enum functionality."""
 
-    def test_message_type_values(self):
+    def test_message_type_values(self) -> None:
         """Test that message types have expected values."""
         assert MsgType.PRE_PREPARE.value == 1
         assert MsgType.PREPARE.value == 2
@@ -142,7 +142,7 @@ class TestMsgType:
         assert MsgType.ROUND_CHANGE.value == 4
         assert MsgType.DECIDED.value == 5
 
-    def test_message_type_names(self):
+    def test_message_type_names(self) -> None:
         """Test that message types have expected names."""
         assert MsgType.PRE_PREPARE.name == "PRE_PREPARE"
         assert MsgType.PREPARE.name == "PREPARE"
@@ -154,14 +154,14 @@ class TestMsgType:
 class TestDutyType:
     """Test DutyType enum functionality."""
 
-    def test_duty_type_values(self):
+    def test_duty_type_values(self) -> None:
         """Test that duty types have expected values."""
         assert DutyType.PROPOSER.value == 1
         assert DutyType.ATTESTER.value == 2
         assert DutyType.AGGREGATOR.value == 9
         assert DutyType.SYNC_MESSAGE.value == 10
 
-    def test_duty_type_names(self):
+    def test_duty_type_names(self) -> None:
         """Test that duty types have expected names."""
         assert DutyType.PROPOSER.name == "PROPOSER"
         assert DutyType.ATTESTER.name == "ATTESTER"

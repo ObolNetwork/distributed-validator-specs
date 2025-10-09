@@ -18,7 +18,7 @@ from dv_spec.types import Duty, DutyType
 class TestTimerTypes:
     """Test timer type enumeration."""
 
-    def test_timer_type_values(self):
+    def test_timer_type_values(self) -> None:
         """Test that timer types have correct values."""
         assert TimerType.INCREASING.value == "inc"
         assert TimerType.EAGER_DOUBLE_LINEAR.value == "eager_dlinear"
@@ -28,12 +28,12 @@ class TestTimerTypes:
 class TestIncreasingRoundTimer:
     """Test IncreasingRoundTimer implementation."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Setup test fixtures."""
         self.duty = Duty(slot=100, type=DutyType.PROPOSER)
         self.timer = IncreasingRoundTimer(self.duty)
 
-    def test_basic_timeout_calculation(self):
+    def test_basic_timeout_calculation(self) -> None:
         """Test increasing timeout calculation."""
         # Use non-proposer duty to avoid proposal timeout optimization
         non_proposer_timer = IncreasingRoundTimer(Duty(slot=100, type=DutyType.ATTESTER))
@@ -46,13 +46,13 @@ class TestIncreasingRoundTimer:
         timeout_2 = non_proposer_timer.calculate_timeout(2)
         assert timeout_2 == 1.25
 
-    def test_proposal_timeout_optimization(self):
+    def test_proposal_timeout_optimization(self) -> None:
         """Test proposal timeout optimization for round 1."""
         # For proposer duty in round 1, should return 1.5s
         timeout = self.timer.calculate_timeout(1)
         assert timeout == 1.5  # Proposal timeout optimization
 
-    def test_timer_type(self):
+    def test_timer_type(self) -> None:
         """Test timer type identification."""
         assert self.timer.get_type() == TimerType.INCREASING
         assert not self.timer.is_eager()  # Should not be eager
@@ -61,12 +61,12 @@ class TestIncreasingRoundTimer:
 class TestLinearRoundTimer:
     """Test LinearRoundTimer implementation."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Setup test fixtures."""
         self.duty = Duty(slot=100, type=2)  # Non-proposer duty
         self.timer = LinearRoundTimer(self.duty)
 
-    def test_basic_timeout_calculation(self):
+    def test_basic_timeout_calculation(self) -> None:
         """Test linear timeout calculation."""
         # Round 1: First round has 1 second
         timeout_1 = self.timer.calculate_timeout(1)
@@ -76,13 +76,13 @@ class TestLinearRoundTimer:
         timeout_2 = self.timer.calculate_timeout(2)
         assert timeout_2 == 0.4
 
-    def test_proposal_timeout_optimization(self):
+    def test_proposal_timeout_optimization(self) -> None:
         """Test proposal timeout optimization for proposer duty."""
         proposer_timer = LinearRoundTimer(Duty(slot=100, type=1))
         timeout = proposer_timer.calculate_timeout(1)  # First round is now round 1
         assert timeout == 1.5  # Proposal timeout optimization
 
-    def test_timer_type(self):
+    def test_timer_type(self) -> None:
         """Test timer type identification."""
         assert self.timer.get_type() == TimerType.LINEAR
         assert not self.timer.is_eager()  # Should not be eager
@@ -91,7 +91,7 @@ class TestLinearRoundTimer:
 class TestDoubleEagerLinearRoundTimer:
     """Test DoubleEagerLinearRoundTimer implementation."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Setup test fixtures."""
         self.duty = Duty(slot=100, type=2)  # Non-proposer duty
         self.timer = DoubleEagerLinearRoundTimer(self.duty)
@@ -100,7 +100,7 @@ class TestDoubleEagerLinearRoundTimer:
         self.mock_time = 1000.0
         self.timer._current_time_func = lambda: self.mock_time
 
-    def test_basic_timeout_calculation(self):
+    def test_basic_timeout_calculation(self) -> None:
         """Test double eager linear timeout calculation."""
         # Round 1: max(1.0, 1 * 1.0) = 1.0 second
         timeout_1 = self.timer.calculate_timeout(1)
@@ -114,7 +114,7 @@ class TestDoubleEagerLinearRoundTimer:
         timeout_5 = self.timer.calculate_timeout(5)
         assert timeout_5 == 5.0
 
-    def test_double_timeout_behavior(self):
+    def test_double_timeout_behavior(self) -> None:
         """Test the doubling behavior when accessing the same round multiple times."""
         # First access to round 2
         timeout_first = self.timer.calculate_timeout(2)
@@ -128,7 +128,7 @@ class TestDoubleEagerLinearRoundTimer:
         # Should be remaining time from first deadline + base timeout
         assert timeout_second > timeout_first
 
-    def test_proposal_timeout_optimization(self):
+    def test_proposal_timeout_optimization(self) -> None:
         """Test proposal timeout optimization for proposer duty."""
         proposer_timer = DoubleEagerLinearRoundTimer(Duty(slot=100, type=1))
         proposer_timer._current_time_func = lambda: 1000.0
@@ -136,12 +136,12 @@ class TestDoubleEagerLinearRoundTimer:
         timeout = proposer_timer.calculate_timeout(1)  # First round is now round 1
         assert timeout == 1.5  # Proposal timeout optimization
 
-    def test_timer_type(self):
+    def test_timer_type(self) -> None:
         """Test timer type identification."""
         assert self.timer.get_type() == TimerType.EAGER_DOUBLE_LINEAR
         assert self.timer.is_eager()  # Should be eager
 
-    def test_reset_round(self):
+    def test_reset_round(self) -> None:
         """Test resetting a specific round."""
         # Access round 2 to create first deadline
         self.timer.calculate_timeout(2)
@@ -151,7 +151,7 @@ class TestDoubleEagerLinearRoundTimer:
         self.timer.reset_round(2)
         assert 2 not in self.timer.first_deadlines
 
-    def test_clear_all_rounds(self):
+    def test_clear_all_rounds(self) -> None:
         """Test clearing all round tracking."""
         # Access multiple rounds
         self.timer.calculate_timeout(1)
@@ -168,28 +168,28 @@ class TestDoubleEagerLinearRoundTimer:
 class TestTimerFactory:
     """Test timer factory functions."""
 
-    def test_create_timer_increasing(self):
+    def test_create_timer_increasing(self) -> None:
         """Test creating IncreasingRoundTimer."""
         duty = Duty(slot=100, type=1)
         timer = create_timer(TimerType.INCREASING, duty)
         assert isinstance(timer, IncreasingRoundTimer)
         assert timer.duty == duty
 
-    def test_create_timer_linear(self):
+    def test_create_timer_linear(self) -> None:
         """Test creating LinearRoundTimer."""
         duty = Duty(slot=100, type=1)
         timer = create_timer(TimerType.LINEAR, duty)
         assert isinstance(timer, LinearRoundTimer)
         assert timer.duty == duty
 
-    def test_create_timer_double_eager_linear(self):
+    def test_create_timer_double_eager_linear(self) -> None:
         """Test creating DoubleEagerLinearRoundTimer."""
         duty = Duty(slot=100, type=1)
         timer = create_timer(TimerType.EAGER_DOUBLE_LINEAR, duty)
         assert isinstance(timer, DoubleEagerLinearRoundTimer)
         assert timer.duty == duty
 
-    def test_get_default_timer(self):
+    def test_get_default_timer(self) -> None:
         """Test getting default timer."""
         duty = Duty(slot=100, type=1)
         timer = get_default_timer(duty)
@@ -200,14 +200,14 @@ class TestTimerFactory:
 class TestTimerComparison:
     """Test comparing different timer implementations."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Setup timer instances for comparison."""
         self.duty = Duty(slot=100, type=2)
         self.increasing = IncreasingRoundTimer(self.duty)
         self.linear = LinearRoundTimer(self.duty)
         self.double_eager = DoubleEagerLinearRoundTimer(self.duty)
 
-    def test_round_1_comparison(self):
+    def test_round_1_comparison(self) -> None:
         """Compare all timers for round 1 (protocol's first round)."""
         # IncreasingRoundTimer: 750ms + 1*250ms = 1000ms
         inc_timeout = self.increasing.calculate_timeout(1)
@@ -224,7 +224,7 @@ class TestTimerComparison:
         # All timers should be the same for protocol's first round
         assert lin_timeout == del_timeout == inc_timeout
 
-    def test_higher_rounds_comparison(self):
+    def test_higher_rounds_comparison(self) -> None:
         """Compare all timers for higher rounds."""
         round_num = 5
 

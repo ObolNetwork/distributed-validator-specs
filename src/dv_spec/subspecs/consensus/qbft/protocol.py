@@ -86,7 +86,7 @@ class QBFTConsensus:
     timer: RoundTimer = field(init=False)
     """Round timer instance."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize specific timer implementation."""
         self.timer = get_default_timer(self.duty)
         # Store proposal value in transport
@@ -130,6 +130,8 @@ class QBFTConsensus:
         prepared_values: Dict[Tuple[int, bytes], int] = {}
         for rc in consensus_msg.justification:
             if rc.type != MsgType.PREPARE:
+                continue
+            if rc.value_hash is None:
                 continue
             key = (rc.round, rc.value_hash)
             prepared_values[key] = prepared_values.get(key, 0) + 1
@@ -209,8 +211,6 @@ class QBFTConsensus:
                 return self.is_justified_round_change(consensus_msg)
             case MsgType.DECIDED:
                 return self.is_justified_decided(consensus_msg)
-            case _:
-                return False
 
     def _buffer_message(self, consensus_msg: QBFTConsensusMsg) -> None:
         """Store message in buffer."""
@@ -259,7 +259,7 @@ class QBFTConsensus:
                     return UponRule.NOTHING, []
 
                 prepares = [
-                    j
+                    j.msg
                     for j in self._flatten()
                     if j.msg.type == MsgType.PREPARE
                     and j.msg.round == msg.round
@@ -273,7 +273,7 @@ class QBFTConsensus:
                     return UponRule.NOTHING, []
 
                 commits = [
-                    j
+                    j.msg
                     for j in self._flatten()
                     if j.msg.type == MsgType.COMMIT
                     and j.msg.round == msg.round
@@ -289,7 +289,8 @@ class QBFTConsensus:
                 all_msg = self._flatten()
                 if msg.round > self.round:
                     # Check if we have f+1 ROUND-CHANGE messages for rounds > current round
-                    highest_by_source = {}  # peer -> highest ROUND-CHANGE message
+                    # peer -> highest ROUND-CHANGE message
+                    highest_by_source: Dict[int, QBFTConsensusMsg] = {}
                     for m in all_msg:
                         if m.msg.type != MsgType.ROUND_CHANGE:
                             continue
@@ -298,7 +299,7 @@ class QBFTConsensus:
                             continue
 
                         peer_in_highest = highest_by_source.get(m.msg.peer_idx)
-                        if peer_in_highest and peer_in_highest.round > m.msg.round:
+                        if peer_in_highest and peer_in_highest.msg.round > m.msg.round:
                             continue
 
                         highest_by_source[m.msg.peer_idx] = m
@@ -309,7 +310,10 @@ class QBFTConsensus:
                     if len(highest_by_source) < self.d.faulty() + 1:
                         return UponRule.NOTHING, []
                     else:
-                        return UponRule.F_PLUS_1_ROUND_CHANGES, list(highest_by_source.values())
+                        return (
+                            UponRule.F_PLUS_1_ROUND_CHANGES,
+                            [v.msg for v in highest_by_source.values()],
+                        )
 
                 # else msg.Round == round
 
@@ -322,7 +326,7 @@ class QBFTConsensus:
                     return UponRule.NOTHING, []
 
                 # Get justified QRC (Algorithm 4:1)
-                justified_qrc: List[QBFTConsensusMsg] = []
+                justified_qrc: List[QBFTMsg] = []
                 found_justified = False
 
                 # First check for quorum none prepared
@@ -338,7 +342,7 @@ class QBFTConsensus:
                 ]
 
                 if len(none_prepared_qrc) >= self.d.quorum():
-                    justified_qrc = none_prepared_qrc
+                    justified_qrc = [m.msg for m in none_prepared_qrc]
                     found_justified = True
                 else:
                     # Get all prepare quorums
@@ -347,6 +351,8 @@ class QBFTConsensus:
 
                     for m in all_msg:
                         if m.msg.type != MsgType.PREPARE:
+                            continue
+                        if m.msg.value_hash is None:
                             continue
 
                         key = (m.msg.round, m.msg.value_hash)
@@ -360,7 +366,7 @@ class QBFTConsensus:
                             continue
 
                         prepares = list(msgs_dict.values())
-                        qrc_candidates = []
+                        qrc_candidates: List[QBFTConsensusMsg] = []
                         has_highest_prepared = False
                         pr = prepares[0].round
                         pv = prepares[0].value_hash
@@ -380,7 +386,7 @@ class QBFTConsensus:
                             used_sources.add(rc.msg.peer_idx)
 
                         if len(qrc_candidates) >= self.d.quorum() and has_highest_prepared:
-                            justified_qrc = qrc_candidates + prepares
+                            justified_qrc = [rc.msg for rc in qrc_candidates] + prepares
                             found_justified = True
                             break
 
@@ -392,12 +398,9 @@ class QBFTConsensus:
 
                 return UponRule.QUORUM_ROUND_CHANGES, justified_qrc
 
-            case _:
-                raise ValueError("Unknown message type")
-
         return UponRule.NOTHING, []
 
-    def _change_round(self, r: int):
+    def _change_round(self, r: int) -> None:
         """Change to a new round if round is greater than current."""
         if r == self.round:
             return
@@ -413,8 +416,8 @@ class QBFTConsensus:
         if consensus_msg.values:
             value_mappings = {}
             for value in consensus_msg.values:
-                value_hash = hash_value(value)
-                value_mappings[value_hash] = value
+                val_hash = hash_value(value)
+                value_mappings[val_hash] = value
             self.t.set_values(value_mappings)
 
         # Only handle messages for our duty
@@ -423,12 +426,15 @@ class QBFTConsensus:
 
         if len(self.q_commit) > 0:
             if msg.peer_idx != self.peer and msg.type == MsgType.ROUND_CHANGE:
+                value_hash: Optional[bytes] = self.q_commit[0].value_hash
+                if value_hash is None:
+                    return []
                 return self.t.broadcast_message(
                     MsgType.DECIDED,
                     self.duty,
                     self.peer,
                     self.round,
-                    self.q_commit[0].value_hash,
+                    value_hash,
                     self.q_commit,
                 )
             return []
@@ -445,13 +451,14 @@ class QBFTConsensus:
         if (rule, self.round) in self.dedup_rules:
             return []
         self.dedup_rules[(rule, self.round)] = True
-        print(rule)
         match rule:
             case UponRule.JUSTIFIED_PRE_PREPARE:
                 self._change_round(msg.round)
 
                 # TODO stop previous timer and start new one
 
+                if msg.value_hash is None:
+                    return []
                 return self.t.broadcast_message(
                     MsgType.PREPARE, self.duty, self.peer, self.round, msg.value_hash
                 )
@@ -461,6 +468,8 @@ class QBFTConsensus:
                 self.prepared_value_hash = msg.value_hash
                 self.prepared_justification = justification
 
+                if msg.value_hash is None:
+                    return []
                 return self.t.broadcast_message(
                     MsgType.COMMIT, self.duty, self.peer, self.round, msg.value_hash
                 )
@@ -491,13 +500,13 @@ class QBFTConsensus:
                 # Get the smallest round in the set
                 rmin = float("inf")
                 for j in justification:
-                    if j.msg.type != MsgType.ROUND_CHANGE:
+                    if j.type != MsgType.ROUND_CHANGE:
                         raise ValueError("Frc contain non-round change")
-                    elif j.msg.round <= self.round:
+                    elif j.round <= self.round:
                         raise ValueError("Frc round not in future")
 
-                    if rmin > j.msg.round:
-                        rmin = j.msg.round
+                    if rmin > j.round:
+                        rmin = j.round
 
                 self._change_round(int(rmin))
 
@@ -516,10 +525,10 @@ class QBFTConsensus:
                 # Extracts the single justified Pr and Pv from quorum PREPARES in list of messages
                 prepared_values: Dict[Tuple[int, bytes], int] = {}
                 for rc in justification:
-                    if rc.msg.type != MsgType.PREPARE:
+                    if rc.type != MsgType.PREPARE:
                         continue
-                    if rc.msg.prepared_round is not None and rc.msg.prepared_value_hash is not None:
-                        key = (rc.msg.prepared_round, rc.msg.prepared_value_hash)
+                    if rc.prepared_round is not None and rc.prepared_value_hash is not None:
+                        key = (rc.prepared_round, rc.prepared_value_hash)
                         prepared_values[key] = prepared_values.get(key, 0) + 1
 
                 if prepared_values:
@@ -533,7 +542,6 @@ class QBFTConsensus:
                             self.peer,
                             self.round,
                             highest_pv_hash,
-                            self.d.nodes,
                             justification,
                         )
 

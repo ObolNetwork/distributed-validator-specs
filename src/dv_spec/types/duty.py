@@ -34,7 +34,7 @@ class Duty(BaseModel):
         """Make Duty hashable so it can be used as dict key."""
         return hash((self.slot, self.type))
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Define equality for Duty objects."""
         if not isinstance(other, Duty):
             return False

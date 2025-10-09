@@ -13,24 +13,24 @@ from dv_spec.types import Duty, DutyType
 class TestDutyType:
     """Test DutyType enumeration."""
 
-    def test_duty_type_values(self):
+    def test_duty_type_values(self) -> None:
         """Test that DutyType values are correct."""
-        assert DutyType.UNKNOWN == 0
-        assert DutyType.PROPOSER == 1
-        assert DutyType.ATTESTER == 2
-        assert DutyType.SIGNATURE == 3
-        assert DutyType.EXIT == 4
-        assert DutyType.BUILDER_PROPOSER == 5
-        assert DutyType.BUILDER_REGISTRATION == 6
-        assert DutyType.RANDAO == 7
-        assert DutyType.PREPARE_AGGREGATOR == 8
-        assert DutyType.AGGREGATOR == 9
-        assert DutyType.SYNC_MESSAGE == 10
-        assert DutyType.PREPARE_SYNC_CONTRIBUTION == 11
-        assert DutyType.SYNC_CONTRIBUTION == 12
-        assert DutyType.INFO_SYNC == 13
+        assert DutyType.UNKNOWN.value == 0
+        assert DutyType.PROPOSER.value == 1
+        assert DutyType.ATTESTER.value == 2
+        assert DutyType.SIGNATURE.value == 3
+        assert DutyType.EXIT.value == 4
+        assert DutyType.BUILDER_PROPOSER.value == 5
+        assert DutyType.BUILDER_REGISTRATION.value == 6
+        assert DutyType.RANDAO.value == 7
+        assert DutyType.PREPARE_AGGREGATOR.value == 8
+        assert DutyType.AGGREGATOR.value == 9
+        assert DutyType.SYNC_MESSAGE.value == 10
+        assert DutyType.PREPARE_SYNC_CONTRIBUTION.value == 11
+        assert DutyType.SYNC_CONTRIBUTION.value == 12
+        assert DutyType.INFO_SYNC.value == 13
 
-    def test_duty_type_names(self):
+    def test_duty_type_names(self) -> None:
         """Test that DutyType names are correct."""
         assert DutyType.PROPOSER.name == "PROPOSER"
         assert DutyType.ATTESTER.name == "ATTESTER"
@@ -40,13 +40,13 @@ class TestDutyType:
 class TestDuty:
     """Test Duty class functionality."""
 
-    def test_duty_creation(self):
+    def test_duty_creation(self) -> None:
         """Test creating a Duty object."""
         duty = Duty(slot=100, type=DutyType.PROPOSER)
         assert duty.slot == 100
         assert duty.type == DutyType.PROPOSER
 
-    def test_duty_equality(self):
+    def test_duty_equality(self) -> None:
         """Test Duty equality comparison."""
         duty1 = Duty(slot=100, type=DutyType.PROPOSER)
         duty2 = Duty(slot=100, type=DutyType.PROPOSER)
@@ -58,7 +58,7 @@ class TestDuty:
         assert duty1 != duty4
         assert duty1 != "not a duty"
 
-    def test_duty_hash(self):
+    def test_duty_hash(self) -> None:
         """Test that Duty objects can be hashed and used as dict keys."""
         duty1 = Duty(slot=100, type=DutyType.PROPOSER)
         duty2 = Duty(slot=100, type=DutyType.PROPOSER)

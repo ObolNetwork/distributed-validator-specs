@@ -8,7 +8,7 @@ for distributed validators.
 from enum import IntEnum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from dv_spec.types import Duty
 
@@ -60,7 +60,7 @@ class QBFTMsg(BaseModel):
 
     @field_validator("prepared_round")
     @classmethod
-    def validate_prepared_round(cls, v: Optional[int], info) -> Optional[int]:
+    def validate_prepared_round(cls, v: Optional[int], info: ValidationInfo) -> Optional[int]:
         """
         Validate prepared_round constraints.
 
@@ -101,7 +101,9 @@ class QBFTMsg(BaseModel):
 
     @field_validator("prepared_value_hash")
     @classmethod
-    def validate_prepared_value_hash(cls, v: Optional[bytes], info) -> Optional[bytes]:
+    def validate_prepared_value_hash(
+        cls, v: Optional[bytes], info: ValidationInfo
+    ) -> Optional[bytes]:
         """
         Validate prepared_value_hash constraints.
 

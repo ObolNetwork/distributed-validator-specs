@@ -11,7 +11,7 @@ from dv_spec.types import Duty
 class TestDefinition:
     """Test cases for the Definition class."""
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         """Test creating a Definition with valid parameters."""
         d = Definition(nodes=4)
         assert d.nodes == 4
@@ -22,7 +22,7 @@ class TestDefinition:
         d = Definition(nodes=10)
         assert d.nodes == 10
 
-    def test_quorum_calculation(self):
+    def test_quorum_calculation(self) -> None:
         """Test quorum calculation for various cluster sizes."""
         # Standard cases
         d = Definition(nodes=4)
@@ -34,7 +34,7 @@ class TestDefinition:
         d = Definition(nodes=10)
         assert d.quorum() == 7  # ceil(2*10/3) = ceil(20/3) = 7
 
-    def test_faulty_calculation(self):
+    def test_faulty_calculation(self) -> None:
         """Test faulty node calculation for various cluster sizes."""
         # Standard cases
         d = Definition(nodes=4)
@@ -46,7 +46,7 @@ class TestDefinition:
         d = Definition(nodes=10)
         assert d.faulty() == 3  # floor((10-1)/3) = floor(9/3) = 3
 
-    def test_is_leader_deterministic(self):
+    def test_is_leader_deterministic(self) -> None:
         """Test that leader election is deterministic."""
         duty = Duty(slot=100, type=1)
         d = Definition(nodes=4)
@@ -65,7 +65,7 @@ class TestDefinition:
         # Should have exactly one leader per round
         assert len(leaders_round1) == 1
 
-    def test_is_leader_round_rotation(self):
+    def test_is_leader_round_rotation(self) -> None:
         """Test that leadership rotates across rounds."""
         duty = Duty(slot=102, type=1)
         d = Definition(nodes=4)
@@ -85,7 +85,7 @@ class TestDefinition:
         unique_leaders = set(leaders)
         assert len(unique_leaders) == 4
 
-    def test_byzantine_fault_tolerance_properties(self):
+    def test_byzantine_fault_tolerance_properties(self) -> None:
         """Test that quorum and faulty calculations satisfy BFT properties."""
         for nodes in range(1, 20):
             d = Definition(nodes=nodes)
