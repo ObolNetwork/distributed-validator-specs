@@ -8,6 +8,7 @@ Main components:
 - protocol: Core consensus algorithm and state machine
 """
 
+from .definition import Definition
 from .message import (
     MsgType,
     QBFTConsensusMsg,
@@ -17,11 +18,15 @@ from .protocol import (
     QBFTConsensus,
     UponRule,
 )
+from .transport import Transport, PeerInfo
 
 __all__ = [
+    "Definition",
     "MsgType",
     "QBFTMsg",
     "QBFTConsensusMsg",
-    "UponRule",
     "QBFTConsensus",
+    "UponRule", 
+    "Transport",
+    "PeerInfo",
 ]

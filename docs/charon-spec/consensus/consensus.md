@@ -33,6 +33,28 @@ A **duty** represents a specific validator task at a particular slot. All consen
 - Proposing at slot 1235
 - Sync committee contribution at slot 1236
 
+The Duty data model is defined [here](/src/dv_spec/subspecs/consensus/qbft/duty.py).
+```python
+class Duty(BaseModel):
+    """A duty assigned to a validator."""
+    slot: int = Field(description="The slot number for the duty.")
+    type: DutyType = Field(description="The type of duty, represented as an integer.")
+
+    def __hash__(self) -> int:
+        """Make Duty hashable so it can be used as dict key."""
+        return hash((self.slot, self.type))
+
+    def __eq__(self, other) -> bool:
+        """Define equality for Duty objects."""
+        if not isinstance(other, Duty):
+            return False
+        return self.slot == other.slot and self.type == other.type
+```
+
+Given that our distributed validator cluster handles multiple validators, it would be inefficient to run a separate consensus instance for each validator duty.
+Instead, we run a single consensus instance per duty type per slot. For example, if we have 10 validators and need to attest at slot 1234, we run one consensus
+instance for the attestation duty at slot 1234, and all 10 validators receive the agreed attestation value.
+
 ### Consensus
 
 The consensus protocol described in this document is **QBFT**. This protocol proceeds in rounds, with each round having a designated leader who proposes a value. Nodes vote on the proposal through prepare and commit phases. If consensus is not reached within a timeout, nodes move to the next round with a new leader.
@@ -60,7 +82,7 @@ They can be found [here](/src/dv_spec/subspecs/consensus/qbft/timer.py).
 
 ### Phases
 
-Each round has three phases:
+Each QBFT round has three phases:
 
 1. **Pre-Prepare**: Leader proposes a value
 2. **Prepare**: Nodes vote on the proposal
@@ -141,7 +163,7 @@ class QBFTConsensusMsg(BaseModel):
 
 ### Consensus State
 
-The main consensus state machine that handles message processing and state transitions is defined in the `QBFTConsensus` class [here](/src/dv_spec/subspecs/consensus/qbft/protocol.py).
+The main consensus state machine that handles incoming message and state transitions is defined in the `QBFTConsensus` class [here](/src/dv_spec/subspecs/consensus/qbft/protocol.py).
 
 ```python
 @dataclass
@@ -153,8 +175,11 @@ class QBFTConsensus:
     state information, and timing for round changes.
     """
 
-    d: QBFTDefinition
+    d: Definition
     """QBFT system parameters."""
+
+    t: Transport
+    """Transport layer for sending/receiving messages."""
 
     duty: Duty
     """Current duty being agreed upon."""
@@ -194,12 +219,9 @@ class QBFTConsensus:
 
     timer: RoundTimer = field(init=False)
     """Round timer instance."""
-
-    # TODO Charon works a bit differently than this
-    mapping: Dict[bytes, Any] = field(default_factory=dict)
-    """Stores value mappings by their hash."""
 ```
 
+The consensus logic is separated from the transport layer. The `Transport` class handles sending and receiving messages over libp2p, while the `QBFTConsensus` class focuses on the consensus protocol itself.
 
 ## Testing and Verification
 
@@ -208,6 +230,8 @@ The specification includes comprehensive tests:
 - Message validation: `tests/dv_spec/consensus/test_messages.py`
 - Protocol logic: `tests/dv_spec/consensus/test_protocol.py`
 - Timer implementations: `tests/dv_spec/consensus/test_timer.py`
+- Transport layer: `tests/dv_spec/consensus/test_transport.py`
+- Definition parameters: `tests/dv_spec/consensus/test_definition.py`
 
 Run tests:
 

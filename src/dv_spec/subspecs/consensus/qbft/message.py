@@ -81,9 +81,9 @@ class QBFTMsg(BaseModel):
 
     @field_validator('signature')
     @classmethod
-    def validate_signature(cls, v: bytes) -> bytes:
+    def validate_signature(cls, v: Optional[bytes]) -> Optional[bytes]:
         """Ensure signature is 65 bytes ("Ethereum R S V" format)"""
-        if len(v) != 65:
+        if v is not None and len(v) != 65:
             raise ValueError("signature must be 65 bytes")
         return v
 

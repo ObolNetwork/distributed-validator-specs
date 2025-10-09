@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Dict
 
 from dv_spec.types import Duty
+from dv_spec.types.duty import DutyType
 
 
 class TimerType(Enum):
@@ -47,11 +48,13 @@ class IncreasingRoundTimer(RoundTimer):
     - Protocol starts at round 1: 750ms + 250ms * 1 = 1000ms
     - Increases by 250ms for each subsequent round
     """
+    duty: Duty
+    """Duty associated with this timer, used for optimizations."""
 
     INC_ROUND_START = 0.75  # 750ms
     INC_ROUND_INCREASE = 0.25  # 250ms
 
-    def __init__(self, duty: Duty = None):
+    def __init__(self, duty: Duty):
         self.duty = duty
 
     def calculate_timeout(self, round_num: int) -> float:
@@ -70,9 +73,7 @@ class IncreasingRoundTimer(RoundTimer):
         """Check if proposal timeout optimization applies."""
         # This optimization applies when ProposalTimeout feature is enabled,
         # duty is proposer, and we're in the first round
-        return (self.duty is not None and
-                self.duty.type == 1 and  # Assuming type 1 is proposer
-                round_num == 1)  # Protocol starts at round 1
+        return (self.duty.type == DutyType.PROPOSER and round_num == 1) 
 
 
 class LinearRoundTimer(RoundTimer):
@@ -83,8 +84,10 @@ class LinearRoundTimer(RoundTimer):
     - Round 1: 1 second
     - Subsequent rounds: 200ms + 200ms * (round - 1)
     """
+    duty: Duty
+    """Duty associated with this timer, used for optimizations."""
 
-    def __init__(self, duty: Duty = None):
+    def __init__(self, duty: Duty):
         """Initialize the timer with optional duty information."""
         self.duty = duty
 
@@ -105,9 +108,7 @@ class LinearRoundTimer(RoundTimer):
 
     def _proposal_timeout_optimization(self, round_num: int) -> bool:
         """Check if proposal timeout optimization applies."""
-        return (self.duty is not None and
-                self.duty.type == 1 and  # Proposer duty
-                round_num == 1)  # Protocol starts at round 1
+        return (self.duty.type == DutyType.PROPOSER and round_num == 1) 
 
 
 class DoubleEagerLinearRoundTimer(RoundTimer):
@@ -129,8 +130,10 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
     the leader to reset at the start of the round (no effect), while others reset when they
     receive the justified pre-prepare (large effect). Leaders tend to get out of sync.
     """
+    duty: Duty
+    """Duty associated with this timer, used for optimizations."""
 
-    def __init__(self, duty: Duty = None):
+    def __init__(self, duty: Duty):
         """Initialize the timer with optional duty information."""
         self.duty = duty
         self.first_deadlines: Dict[int, float] = {}  # Track first timeout for each round
@@ -148,9 +151,9 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
         """
         # Handle proposal timeout optimization
         if self._proposal_timeout_optimization(round_num):
-            base_timeout = 1.5  # 1500ms
+            timeout = 1.5  # 1500ms
         else:
-            base_timeout = self._linear_round_timeout(round_num)
+            timeout = self._linear_round_timeout(round_num)
 
         current_time = self._current_time_func()
 
@@ -159,11 +162,11 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
             first_deadline = self.first_deadlines[round_num]
             # Calculate remaining time from first deadline, then double it
             remaining_from_first = max(0, first_deadline - current_time)
-            return remaining_from_first + base_timeout  # Effectively doubling
+            return remaining_from_first + timeout  # Effectively doubling
         else:
             # First time accessing this round - store the deadline and return base timeout
-            self.first_deadlines[round_num] = current_time + base_timeout
-            return base_timeout
+            self.first_deadlines[round_num] = current_time + timeout
+            return timeout
 
     def get_type(self) -> TimerType:
         """Return the timer type identifier."""
@@ -176,7 +179,7 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
     def _proposal_timeout_optimization(self, round_num: int) -> bool:
         """Check if proposal timeout optimization applies."""
         return (self.duty is not None and
-                self.duty.type == 1 and  # Proposer duty
+                self.duty.type == DutyType.PROPOSER and 
                 round_num == 1)  # Protocol starts at round 1
 
     def reset_round(self, round_num: int):

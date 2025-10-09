@@ -2,39 +2,46 @@
 Test suite for QBFT Protocol implementation
 """
 
+from dv_spec.subspecs.consensus.cryptography import hash_value
+from dv_spec.subspecs.consensus.qbft.definition import Definition
 from dv_spec.subspecs.consensus.qbft.message import MsgType, QBFTConsensusMsg, QBFTMsg
-from dv_spec.subspecs.consensus.qbft.protocol import QBFTConsensus, QBFTDefinition, UponRule
+from dv_spec.subspecs.consensus.qbft.protocol import QBFTConsensus, UponRule
+from dv_spec.subspecs.consensus.qbft.transport import Transport, PeerInfo
 from dv_spec.types import Duty
 
-class TestQBFTDefinition:
+def create_test_peers(num_nodes: int) -> list[PeerInfo]:
+    """Helper function to create test peers."""
+    return [PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(num_nodes)]
+
+class TestDefinition:
 
     def test_initialization(self):
-        """Test creating a QBFTDefinition."""
-        d = QBFTDefinition(nodes=4)
+        """Test creating a Definition."""
+        d = Definition(nodes=4)
         assert d.nodes == 4
 
     def test_quorum(self):
         """Test quorum calculation."""
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         assert d.quorum() == 3  # ceil(2*4/3) = 3
-        d = QBFTDefinition(nodes=7)
+        d = Definition(nodes=7)
         assert d.quorum() == 5  # ceil(2*7/3) = 5
-        d = QBFTDefinition(nodes=10)
+        d = Definition(nodes=10)
         assert d.quorum() == 7  # ceil(2*10/3) = 7
 
     def test_faulty(self):
         """Test faulty node calculation."""
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         assert d.faulty() == 1  # floor((4-1)/3) = 1
-        d = QBFTDefinition(nodes=7)
+        d = Definition(nodes=7)
         assert d.faulty() == 2  # floor((7-1)/3) = 2
-        d = QBFTDefinition(nodes=10)
+        d = Definition(nodes=10)
         assert d.faulty() == 3  # floor((10-1)/3) = 3
 
     def test_is_leader(self):
         """Test leader election."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
 
         # Round 1 leader
         assert d.is_leader(duty, 1, 2)  # (100+1+1)%4=2
@@ -66,9 +73,11 @@ class TestQBFTConsensus:
     def test_initialization(self):
         """Test consensus initialization with correct parameters."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)  # 32 bytes
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         assert consensus.d == d
         assert consensus.duty == duty
@@ -84,16 +93,20 @@ class TestQBFTConsensus:
         assert consensus.dedupRules == {}
         # round_start_time
         # timer
-        assert consensus.mapping == {consensus._hash_value(proposal_value): proposal_value}
+        # Check that proposal value is stored in transport
+        proposal_hash = hash_value(proposal_value)
+        assert transport.get_value(proposal_hash) == proposal_value
 
     def test_hash_value(self):
         """Test the _hash_value method."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
-        value_hash = consensus._hash_value(proposal_value)
+        value_hash = hash_value(proposal_value)
         assert isinstance(value_hash, bytes)
         assert len(value_hash) == 32  
 
@@ -101,9 +114,11 @@ class TestQBFTConsensus:
     def test_is_justified_pre_prepare(self):
         """Test is_justified_pre_prepare method."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         # Pre-prepare from non-leader
         non_leader_msg = QBFTConsensusMsg(
@@ -114,7 +129,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -131,7 +146,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -149,7 +164,7 @@ class TestQBFTConsensus:
                 round=2,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],  # No justification
@@ -180,7 +195,7 @@ class TestQBFTConsensus:
                 round=2,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=rc_msgs,
@@ -191,7 +206,7 @@ class TestQBFTConsensus:
 
         # Pre-prepare from leader from second round with quorum of round-change with prepared value
         prepared_value = b"prepared_block"
-        prepared_value_hash = consensus._hash_value(prepared_value)
+        prepared_value_hash = hash_value(prepared_value)
         justifications= []
         # quorum of round-change messages with prepared round/value
         for i in range(d.quorum()):
@@ -284,9 +299,11 @@ class TestQBFTConsensus:
     def test_is_justifited_round_change(self):
         """Test is_justified_round_change method."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         # Round-change with no prepared values and no justification
         rc_msg_no_just = QBFTConsensusMsg(
@@ -357,10 +374,12 @@ class TestQBFTConsensus:
     def test_is_justified_decided(self):
         """Test is_justified_decided method."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
-        proposal_value_hash = consensus._hash_value(proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
+        proposal_value_hash = hash_value(proposal_value)
 
         # Decided message without justification
         decided_no_just = QBFTConsensusMsg(
@@ -477,9 +496,11 @@ class TestQBFTConsensus:
         ensure messages that don't require justification return True.
         """
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         # Prepare message (always justified)
         prepare_msg = QBFTConsensusMsg(
@@ -490,7 +511,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -507,7 +528,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -518,9 +539,11 @@ class TestQBFTConsensus:
     def test_buffer_message(self):
         """Test buffering messages."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         msg1 = QBFTConsensusMsg(
             msg=QBFTMsg(
@@ -530,7 +553,7 @@ class TestQBFTConsensus:
                 round=2,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -544,7 +567,7 @@ class TestQBFTConsensus:
                 round=3,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -561,9 +584,11 @@ class TestQBFTConsensus:
     def test_flatten(self):
         """Test the flatten utility method."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         # message with justification
         round_change_msg = QBFTConsensusMsg(
@@ -575,7 +600,7 @@ class TestQBFTConsensus:
                 prepared_round=1,
                 signature=b"0"*65,
                 value_hash=None,
-                prepared_value_hash=consensus._hash_value(proposal_value),
+                prepared_value_hash=hash_value(proposal_value),
             ),
             values=[proposal_value],
             justification=[
@@ -586,7 +611,7 @@ class TestQBFTConsensus:
                     round=1,
                     prepared_round=None,
                     signature=b"0"*65,
-                    value_hash=consensus._hash_value(proposal_value),
+                    value_hash=hash_value(proposal_value),
                     prepared_value_hash=None,
                 ),
                 QBFTMsg(
@@ -596,7 +621,7 @@ class TestQBFTConsensus:
                     round=1,
                     prepared_round=None,
                     signature=b"0"*65,
-                    value_hash=consensus._hash_value(proposal_value),
+                    value_hash=hash_value(proposal_value),
                     prepared_value_hash=None,
                 ),
                 QBFTMsg(
@@ -606,7 +631,7 @@ class TestQBFTConsensus:
                     round=1,
                     prepared_round=None,
                     signature=b"0"*65,
-                    value_hash=consensus._hash_value(proposal_value),
+                    value_hash=hash_value(proposal_value),
                     prepared_value_hash=None,
                 ),
             ],
@@ -624,9 +649,11 @@ class TestQBFTConsensus:
         Test the classify method upon receiving a DECIDED message.
         """
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         # Upon justified decided
         decided_msg = QBFTConsensusMsg(
@@ -637,7 +664,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[
@@ -648,7 +675,7 @@ class TestQBFTConsensus:
                     round=1,
                     prepared_round=None,
                     signature=b"0"*65,
-                    value_hash=consensus._hash_value(proposal_value),
+                    value_hash=hash_value(proposal_value),
                     prepared_value_hash=None,
                 ),
                 QBFTMsg(
@@ -658,7 +685,7 @@ class TestQBFTConsensus:
                     round=1,
                     prepared_round=None,
                     signature=b"0"*65,
-                    value_hash=consensus._hash_value(proposal_value),
+                    value_hash=hash_value(proposal_value),
                     prepared_value_hash=None,
                 ),
                 QBFTMsg(
@@ -668,7 +695,7 @@ class TestQBFTConsensus:
                     round=1,
                     prepared_round=None,
                     signature=b"0"*65,
-                    value_hash=consensus._hash_value(proposal_value),
+                    value_hash=hash_value(proposal_value),
                     prepared_value_hash=None,
                 ),
             ],
@@ -686,9 +713,11 @@ class TestQBFTConsensus:
         Test the classify method upon receiving a PRE-PREPARE message.
         """
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         # Upon justified pre-prepare
         pre_prepare_msg = QBFTConsensusMsg(
@@ -699,7 +728,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -723,9 +752,11 @@ class TestQBFTConsensus:
         Test the classify method upon receiving a PREPARE message.
         """
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         prepare_msg1 = QBFTConsensusMsg(
             msg=QBFTMsg(
@@ -735,7 +766,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -749,7 +780,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -777,7 +808,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -810,9 +841,11 @@ class TestQBFTConsensus:
         Test the classify method upon receiving a COMMIT message.
         """
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         commit_msg1 = QBFTConsensusMsg(
             msg=QBFTMsg(
@@ -822,7 +855,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -836,7 +869,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -864,7 +897,7 @@ class TestQBFTConsensus:
                 round=1,
                 prepared_round=None,
                 signature=b"0"*65,
-                value_hash=consensus._hash_value(proposal_value),
+                value_hash=hash_value(proposal_value),
                 prepared_value_hash=None,
             ),
             justification=[],
@@ -897,10 +930,13 @@ class TestQBFTConsensus:
         Test the classify method upon receiving a ROUND-CHANGE message.
         """
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus_leader = QBFTConsensus(d=d, duty=duty, peer=3, proposal_value=proposal_value)
-        consensus_non_leader = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport_leader = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus_leader = QBFTConsensus(d=d, t=transport_leader, duty=duty, peer=3, proposal_value=proposal_value)
+        transport_non_leader = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus_non_leader = QBFTConsensus(d=d, t=transport_non_leader, duty=duty, peer=0, proposal_value=proposal_value)
 
         # Send round-change messages with nothing prepared
         rc_msg1 = QBFTConsensusMsg(
@@ -978,10 +1014,12 @@ class TestQBFTConsensus:
 
         # Send round-change messages with prepared value and justification
 
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         prepared_value = b"prepared_block"
-        prepared_value_hash = consensus_leader._hash_value(prepared_value)
-        consensus = QBFTConsensus(d=d, duty=duty, peer=3, proposal_value=proposal_value)
+        prepared_value_hash = hash_value(prepared_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=3, proposal_value=proposal_value)
 
         prepare_msgs = []
         for i in range(d.quorum()):
@@ -1058,10 +1096,12 @@ class TestQBFTConsensus:
     
         # Send round-change messages with prepared value and no justification
 
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         prepared_value = b"prepared_block"
-        prepared_value_hash = consensus_leader._hash_value(prepared_value)
-        consensus = QBFTConsensus(d=d, duty=duty, peer=3, proposal_value=proposal_value)
+        prepared_value_hash = hash_value(prepared_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=3, proposal_value=proposal_value)
 
         rc_msg1 = QBFTConsensusMsg(
             msg=QBFTMsg(
@@ -1124,19 +1164,24 @@ class TestQBFTConsensus:
 
     def test_broadcast_message(self):
         """
-        Test the _broadcast_message utility method.
+        Test the broadcast_message utility method from transport.
 
         This is used for pre-prepare/prepare/commit messages.
         """
 
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
-        res = consensus._broadcast_message(
-            type=MsgType.PRE_PREPARE,
-            value_hash=consensus._hash_value(proposal_value),
+        res = transport.broadcast_message(
+            msg_type=MsgType.PRE_PREPARE,
+            duty=duty,
+            peer_idx=consensus.peer,
+            round_num=consensus.round,
+            value_hash=hash_value(proposal_value),
             justification=[],
         )
         assert len(res) == d.nodes
@@ -1148,9 +1193,12 @@ class TestQBFTConsensus:
         assert len(res[0].values) == 1
         assert res[0].values[0] == proposal_value
 
-        res = consensus._broadcast_message(
-            type=MsgType.PREPARE,
-            value_hash=consensus._hash_value(b"other_value"),
+        res = transport.broadcast_message(
+            msg_type=MsgType.PREPARE,
+            duty=duty,
+            peer_idx=consensus.peer,
+            round_num=consensus.round,
+            value_hash=hash_value(b"other_value"),
             justification=[],
         )
         assert len(res) == d.nodes
@@ -1158,22 +1206,28 @@ class TestQBFTConsensus:
         assert res[0].msg.duty == duty
         assert res[0].msg.round == consensus.round
         assert res[0].msg.peer_idx == consensus.peer
-        assert res[0].msg.value_hash == consensus._hash_value(b"other_value")
+        assert res[0].msg.value_hash == hash_value(b"other_value")
         # Does not know mapping from value_hash to proposal_value
         assert len(res[0].values) == 0
 
     def test_broadcast_round_change(self):
         """
-        Test the _broadcast_round_change utility method.
+        Test the broadcast_round_change utility method from transport.
         """
 
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
         
         # Without prepared value and justification
-        res = consensus._broadcast_round_change()
+        res = transport.broadcast_round_change(
+            duty=duty,
+            peer_idx=consensus.peer,
+            round_num=consensus.round
+        )
         assert len(res) == d.nodes
         assert res[0].msg.type == MsgType.ROUND_CHANGE
         assert res[0].msg.duty == duty
@@ -1186,10 +1240,10 @@ class TestQBFTConsensus:
 
         # With prepared value and justification
         prepared_value = b"prepared_block"
-        prepared_value_hash = consensus._hash_value(prepared_value)
+        prepared_value_hash = hash_value(prepared_value)
         consensus.prepared_round = 1
         consensus.prepared_value_hash = prepared_value_hash
-        consensus._store_value_mapping([prepared_value])
+        transport.set_values({prepared_value_hash: prepared_value})
 
         prepare_msgs = []
         for i in range(d.quorum()):
@@ -1206,7 +1260,14 @@ class TestQBFTConsensus:
             prepare_msgs.append(prepare_msg)
         consensus.prepared_justification = prepare_msgs
 
-        res = consensus._broadcast_round_change()
+        res = transport.broadcast_round_change(
+            duty=duty,
+            peer_idx=consensus.peer,
+            round_num=consensus.round,
+            prepared_round=consensus.prepared_round,
+            prepared_value_hash=consensus.prepared_value_hash,
+            prepared_justification=consensus.prepared_justification
+        )
         assert len(res) == d.nodes
         assert res[0].msg.type == MsgType.ROUND_CHANGE
         assert res[0].msg.duty == duty
@@ -1220,17 +1281,25 @@ class TestQBFTConsensus:
 
     def test_broadcast_own_pre_prepare(self):
         """
-        Test the _broadcast_own_pre_prepare utility method.
+        Test the broadcast_pre_prepare utility method from transport.
 
         This is used by the leader to broadcast its own pre-prepare message.
         """
 
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
-        res = consensus._broadcast_own_pre_prepare([])
+        res = transport.broadcast_pre_prepare(
+            duty=duty,
+            peer_idx=consensus.peer,
+            round_num=consensus.round,
+            value_hash=hash_value(proposal_value),
+            justification=[]
+        )
         assert len(res) == d.nodes
         assert res[0].msg.type == MsgType.PRE_PREPARE
         assert res[0].msg.duty == duty
@@ -1241,26 +1310,32 @@ class TestQBFTConsensus:
 
 
     def test_store_value_mapping(self):
-        """Test the _store_value_mapping utility method."""
+        """Test storing values in transport instead of protocol mapping."""
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
 
         value1 = b"value1"
         value2 = b"value2"
         value3 = b"value3"
 
-        consensus._store_value_mapping([value1, value2])
-        assert consensus.mapping[consensus._hash_value(value1)] == value1
-        assert consensus.mapping[consensus._hash_value(value2)] == value2
-        assert consensus._hash_value(value3) not in consensus.mapping
+        # Store values in transport directly
+        value1_hash = hash_value(value1)
+        value2_hash = hash_value(value2)
+        value3_hash = hash_value(value3)
+        
+        transport.set_values({value1_hash: value1, value2_hash: value2})
+        assert transport.get_value(value1_hash) == value1
+        assert transport.get_value(value2_hash) == value2
+        assert transport.get_value(value3_hash) is None
 
-        # Storing the same value again should not change the mapping
-        consensus._store_value_mapping([value1])
-        assert len(consensus.mapping) == 3 # 2 original + proposal_value
-        assert consensus.mapping[consensus._hash_value(value1)] == value1
-        assert consensus.mapping[consensus._hash_value(value2)] == value2
+        # Storing the same value again should not cause issues
+        transport.set_values({value1_hash: value1})
+        assert transport.get_value(value1_hash) == value1
+        assert transport.get_value(value2_hash) == value2
 
     def test_change_round(self):
         """
@@ -1269,9 +1344,11 @@ class TestQBFTConsensus:
         Since this is called from handle_message, we know the round number will be >= current round.
         """
         duty = Duty(slot=100, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
         consensus.dedupRules[(MsgType.PRE_PREPARE, 1)] = True
 
         assert consensus.round == 1
@@ -1293,10 +1370,12 @@ class TestQBFTConsensus:
         Next tests will cover alternate paths.
         """
         duty = Duty(slot=102, type=1)
-        d = QBFTDefinition(nodes=4)
+        d = Definition(nodes=4)
         proposal_value = b"test_block"
-        consensus = QBFTConsensus(d=d, duty=duty, peer=0, proposal_value=proposal_value)
-        proposal_value_hash = consensus._hash_value(proposal_value)
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value)
+        proposal_value_hash = hash_value(proposal_value)
 
         # Receive own pre-prepare (as leader)
         pre_prepare_msg = QBFTConsensusMsg(
@@ -1318,7 +1397,7 @@ class TestQBFTConsensus:
         assert all(m.msg.type == MsgType.PREPARE for m in res)
         assert all(m.msg.round == 1 for m in res)
         assert all(m.msg.peer_idx == 0 for m in res)  # from self
-        assert all(m.msg.value_hash == consensus._hash_value(proposal_value) for m in res)  
+        assert all(m.msg.value_hash == hash_value(proposal_value) for m in res)  
         assert all(m.justification == [] for m in res)
         assert all(m.values == [proposal_value] for m in res)
         assert consensus.prepared_round == None
