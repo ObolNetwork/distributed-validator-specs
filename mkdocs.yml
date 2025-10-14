@@ -59,6 +59,8 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Specs:
+      - Pedersen DKG: specs/pedersen-dkg.md
 
 extra:
   social:
