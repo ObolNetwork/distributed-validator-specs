@@ -16,7 +16,7 @@ from .pedersen import (
     PublicShares,
     ValidatorPubKeyShareMessage,
     ValidatorShare,
-    session_nonce,
+    generate_nonce_from_node_pubkeys,
 )
 
 __all__ = [
@@ -32,5 +32,5 @@ __all__ = [
     "PublicShares",
     "ValidatorPubKeyShareMessage",
     "ValidatorShare",
-    "session_nonce",
+    "generate_nonce_from_node_pubkeys",
 ]

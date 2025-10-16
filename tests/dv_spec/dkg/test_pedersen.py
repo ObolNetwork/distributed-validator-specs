@@ -10,22 +10,24 @@ from dv_spec.subspecs.dkg.pedersen import (
     PedersenResponse,
     PedersenResponseBundle,
     ValidatorPubKeyShareMessage,
-    session_nonce,
+    generate_nonce_from_node_pubkeys,
 )
 
 
-def test_session_nonce_derivation():
-    sid = b"\x11" * 32
-    assert session_nonce(sid) == sha256(sid).digest()
+def test_generate_nonce_from_node_pubkeys() -> None:
+    # Three deterministic pubkeys (already marshaled bytes)
+    pks = [b"pk1", b"pk2", b"pk3"]
+    expect = sha256(b"".join(pks)).digest()
+    assert generate_nonce_from_node_pubkeys(pks) == expect
 
 
-def test_message_models_construct():
+def test_message_models_construct() -> None:
     sid = b"\x01" * 32
     npk = NodePubKeyMessage(session_id=sid, public_key=b"pk")
     assert npk.session_id == sid
     assert npk.public_key == b"pk"
 
-    shares = NodePubKeyShares(public_key_shares=[b"ps1", b"ps2"]) 
+    shares = NodePubKeyShares(public_key_shares=[b"ps1", b"ps2"])
     npk2 = NodePubKeyMessage(session_id=sid, public_key=b"pk2", shares=shares)
     assert npk2.shares is not None and len(npk2.shares.public_key_shares) == 2
 

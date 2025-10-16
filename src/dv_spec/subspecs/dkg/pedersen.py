@@ -24,7 +24,6 @@ from pydantic import Field
 
 from dv_spec.types.base import StrictBaseModel
 
-
 # ----------------------------
 # Protocol identifiers (libp2p)
 # ----------------------------
@@ -45,22 +44,24 @@ Messages are routed by joining this prefix with the following message IDs:
 # Utility helpers
 # ----------------------------
 
-def session_nonce(session_id: bytes) -> bytes:
-    """Derive the Pedersen DKG nonce from a session identifier.
 
-    All participants MUST derive the same nonce for a given ceremony. The
-    nonce is used by the underlying Kyber DKG to disambiguate concurrent
-    sessions and for replay protection.
+def generate_nonce_from_node_pubkeys(node_pubkeys: List[bytes]) -> bytes:
+    """Derive the Pedersen DKG nonce from the reliably broadcast node pubkeys.
+
+    Nonce := SHA256(concat(marshal(node_i.Public))) over all participants' ephemeral
+    BLS public keys collected in step 1 (node_pubkeys signed broadcast), ordered by
+    the canonical peer order (cluster operator index / peer index).
 
     Args:
-        session_id: An opaque, 32-byte identifier shared by all participants
-            for this DKG session (e.g., the cluster definition hash).
+        node_pubkeys: The exact kyber.Point-encoded public keys as carried in
+            `NodePubKeyMessage.public_key`, for all n participants, ordered by
+            canonical peer order.
 
     Returns:
-        A 32-byte nonce to use for the DKG config.
+        A 32-byte nonce suitable for the Pedersen DKG configuration.
     """
-
-    return sha256(session_id).digest()
+    buf = b"".join(node_pubkeys)
+    return sha256(buf).digest()
 
 
 # ----------------------------
@@ -89,7 +90,12 @@ class NodePubKeyMessage(StrictBaseModel):
     """
 
     session_id: bytes = Field(description="Opaque session identifier shared by all nodes")
-    public_key: bytes = Field(description="kyber.Point-encoded ephemeral BLS public key")
+    public_key: bytes = Field(
+        description=(
+            "kyber.Point-encoded ephemeral BLS public key; used as input to the "
+            "nonce derivation by concatenation across all participants"
+        )
+    )
     shares: Optional[NodePubKeyShares] = Field(
         default=None,
         description="Optional, present during resharing to carry pub shares",
