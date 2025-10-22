@@ -23,7 +23,7 @@ Timing
 
 Out of scope for this spec: cluster discovery/formation, storage, application-specific value encoding beyond the hashing contract, and any non-libp2p transport.
 
-## Duty types
+### Duty types
 
 Implementations MUST use the following integer mapping for duty.type; 0 is reserved and invalid on wire.
 
@@ -41,9 +41,9 @@ Implementations MUST use the following integer mapping for duty.type; 0 is reser
 - 12: sync_contribution
 - 13: info_sync
 
-## QBFT interop (wire protocol)
+### Protocol identifiers (libpp2p)
 
-Protocol identifier (libp2p)
+All messages are sent under protocol ID prefix:
 
 ```
 /charon/consensus/qbft/2.0.0
@@ -51,13 +51,17 @@ Protocol identifier (libp2p)
 
 Messages are broadcast to all peers except self; self-delivery is handled locally by the node.
 
-Leader selection
+### Leader selection
 
 ```
 leader_index = (duty.slot + duty.type + round) % n
 ```
 
-Message schemas (protobuf-equivalent)
+### Message schemas (protobuf-equivalent)
+
+The following structures are used over the wire.
+
+The protobufs used by Charon are available [here](https://github.com/ObolNetwork/charon/tree/main/core/corepb/v1).
 
 - QBFTMsg
 
@@ -75,19 +79,19 @@ Message schemas (protobuf-equivalent)
   - justification: repeated QBFTMsg (flat list; nested graphs are rejected)
   - values: repeated Any (protobuf Any wrapping concrete value payloads)
 
-Value carriage
+### Value carriage
 
 - The values array MUST contain an Any-wrapped payload for every non-zero hash referenced by msg.value_hash, msg.prepared_value_hash, and all justifications.
 - Extra values MAY be included; order is irrelevant.
 
-Hashing and signatures
+### Hashing and signatures
 
 - Hashing: compute a deterministic hash root for values and messages from deterministic protobuf encodings.
   - value_hash = HashRoot(deterministic_proto(inner_value))
   - sign HashRoot(deterministic_proto(QBFTMsg without signature))
 - Signatures: secp256k1 (65-byte R||S||V). Verify by recovering the public key and matching the configured key for peer_idx.
 
-Receiver validation rules (reject if any fails)
+### Receiver validation rules (reject if any fails)
 
 - msg and msg.duty are present; msg.type ∈ {1..5}
 - duty.type is valid (see Duty types appendix)
@@ -96,7 +100,7 @@ Receiver validation rules (reject if any fails)
 - every justification has identical duty to msg.duty
 - for each referenced non-zero hash in msg or justifications, a matching value exists in values and re-hashes to that hash
 
-Round mechanics (QBFT)
+### Round mechanics (QBFT)
 
 Phases per round
 
@@ -120,7 +124,7 @@ Transport notes
 - Use libp2p protocol ID above; broadcast to all except self.
 - The envelope may include multiple Any values to satisfy referenced hashes in msg and justifications.
 
-## Field requirements by message type
+### Field requirements by message type
 
 - PRE_PREPARE (type=1)
 
