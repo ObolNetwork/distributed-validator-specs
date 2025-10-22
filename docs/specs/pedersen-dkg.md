@@ -87,6 +87,8 @@ Notes:
 
 The following structures are used over the wire. Implementations must serialize bytes as the canonical encoding of kyber points/scalars in the chosen suite (BLS12-381).
 
+The protobufs used by Charon are available [here](https://github.com/ObolNetwork/charon/tree/main/dkg/dkgpb/v1).
+
 - NodePubKeyMessage
 
   - session_id: bytes
