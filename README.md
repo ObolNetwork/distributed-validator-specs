@@ -12,7 +12,7 @@ Python specifications and protocol definitions for Ethereum distributed validato
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-````
+```
 
 #### Installing Python 3.12+
 
@@ -41,13 +41,25 @@ uv run pytest
 
 Interoperability specs and reference models:
 
-- Consensus (QBFT): wire protocol, message shapes, validation rules, leader/round semantics, and hashing/signing conventions
-- Types and primitives: base types and helpers used by the specs
-- Tests and docs: verification and documentation for implementers
+- **Consensus (QBFT)**: Protocol for agreeing on validator duty data
+- **Partial Signature Exchange (ParSigEx)**: Protocol for exchanging partially signed duty data among distributed validator nodes
+- **Peer Information (PeerInfo)**: Cluster health monitoring and metadata exchange protocol
+- **Pedersen DKG**: Distributed key generation protocol for creating and resharing BLS validator keys
+- **Reliable Broadcast**: Anti-equivocation broadcast component used in DKG protocols
+- **Cluster Files**: Specification for cluster definition and lock file formats
+- **Validator-Beacon Interaction**: How Charon middleware intercepts and proxies validator client requests to beacon nodes
+- **Types and primitives**: Base types and helpers used by the specs
+- **Tests and docs**: Verification and documentation for implementers
 
 ### Where to start
 
-- QBFT consensus interop: `docs/dv-spec/consensus/consensus.md`
+- **QBFT consensus interop**: `docs/dv-spec/consensus.md`
+- **ParSigEx protocol**: `docs/dv-spec/parsigex.md`
+- **PeerInfo protocol**: `docs/dv-spec/peerinfo.md`
+- **Pedersen DKG protocol**: `docs/dv-spec/pedersen-dkg.md`
+- **Reliable broadcast**: `docs/dv-spec/reliable-broadcast.md`
+- **Cluster file formats**: `docs/dv-spec/cluster-files.md`
+- **Validator-Beacon interaction**: `docs/dv-spec/validator-beacon-interaction.md`
 
 ### Project Structure
 
@@ -92,9 +104,15 @@ Interoperability specs and reference models:
 │           └── ...
 ├── docs/
 │   ├── index.md
-│   ├── dv-spec/
-│   │   └── consensus/
-│   │       └── consensus.md         # QBFT interop spec
+│   ├── dv-spec/                      # Protocol specifications
+│   │   ├── consensus.md             # QBFT consensus interop spec
+│   │   ├── parsigex.md              # Partial signature exchange protocol
+│   │   ├── peerinfo.md              # Peer health monitoring protocol
+│   │   ├── pedersen-dkg.md          # Distributed key generation protocol
+│   │   ├── reliable-broadcast.md    # Anti-equivocation broadcast
+│   │   ├── cluster-files.md         # Cluster definition and lock formats
+│   │   └── validator-beacon-interaction.md  # VC-BN middleware spec
+│   ├── consensus/
 │   └── client/
 │       ├── chain.md
 │       ├── containers.md
@@ -160,12 +178,12 @@ uv run tox -e lint
 
 **Alternative: Using uvx (no setup required)**
 
-If you haven't run `uv sync --all-extras` or want to use tox in isolation, 
-you can use `uvx`, which: 
+If you haven't run `uv sync --all-extras` or want to use tox in isolation,
+you can use `uvx`, which:
 
-* Creates a temporary environment just for tox
-* Doesn't require `uv sync` first
-* Uses tox-uv for faster dependency installation
+- Creates a temporary environment just for tox
+- Doesn't require `uv sync` first
+- Uses tox-uv for faster dependency installation
 
 ```bash
 uvx --with=tox-uv tox -e all-checks
@@ -184,6 +202,7 @@ uv run mkdocs build
 ## Development Tools Guide
 
 ### Core Technologies
+
 - **Pydantic models**: Type-safe data structures with automatic validation - perfect for protocol specifications
 - **uv**: Ultra-fast Python package manager and project management
 - **pytest**: Testing framework with excellent parametrization and fixtures
@@ -191,11 +210,13 @@ uv run mkdocs build
 - **mypy**: Static type checker that works seamlessly with Pydantic
 
 ### Distributed Validator Specific
+
 - **Ethereum Types**: Custom Uint64, Bytes32 types that match Ethereum specifications
 - **Cluster Specifications**: Data structures for multi-operator validator setups
 - **Protocol Validation**: Automatic validation of DV protocol constraints
 
 ### Development Workflow Tools
+
 - **tox**: Runs tests across multiple Python versions and environments
 - **mkdocs**: Documentation generator for protocol specifications
 - **coverage**: Test coverage reporting to ensure thorough testing
@@ -203,7 +224,7 @@ uv run mkdocs build
 ## Common Commands Reference
 
 | Task                                   | Command                             |
-|----------------------------------------|-------------------------------------|
+| -------------------------------------- | ----------------------------------- |
 | Install dependencies                   | `uv sync --all-extras`              |
 | Run tests                              | `uv run pytest`                     |
 | Format code                            | `uv run ruff format src tests`      |
@@ -216,14 +237,14 @@ uv run mkdocs build
 | Run everything (checks + tests + docs) | `uv run tox`                        |
 | Run specific tox environment           | `uv run tox -e lint`                |
 
-If you have not run `uv sync --all-extras` or want to use `tox` in isolation, 
+If you have not run `uv sync --all-extras` or want to use `tox` in isolation,
 you can use `uvx`:
 
-| Task                                    | Command                               |
-|-----------------------------------------|---------------------------------------|
-| Run all quality checks (no tests/docs)  | `uvx --with=tox-uv tox -e all-checks` |
-| Run everything (checks + tests + docs)  | `uvx --with=tox-uv tox`               |
-| Run specific tox environment            | `uvx --with=tox-uv tox -e lint`       |
+| Task                                   | Command                               |
+| -------------------------------------- | ------------------------------------- |
+| Run all quality checks (no tests/docs) | `uvx --with=tox-uv tox -e all-checks` |
+| Run everything (checks + tests + docs) | `uvx --with=tox-uv tox`               |
+| Run specific tox environment           | `uvx --with=tox-uv tox -e lint`       |
 
 ## Contributing
 
