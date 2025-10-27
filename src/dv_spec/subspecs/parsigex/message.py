@@ -16,28 +16,6 @@ from enum import IntEnum
 from pydantic import BaseModel, Field
 
 
-class DutyType(IntEnum):
-    """Ethereum consensus layer duty types.
-
-    These identify the type of validator responsibility being performed.
-    Values must match the Charon core workflow duty type constants.
-    """
-
-    UNKNOWN = 0
-    ATTESTER = 1
-    PROPOSER = 2
-    RANDAO = 3
-    PREPARE_AGGREGATOR = 4
-    AGGREGATOR = 5
-    SYNC_MESSAGE = 6
-    PREPARE_SYNC_CONTRIBUTION = 7
-    SYNC_CONTRIBUTION = 8
-    EXIT = 9
-    BUILDER_REGISTRATION = 10
-    # Note: BUILDER_PROPOSER (11) is deprecated
-    SIGNATURE = 12  # Used internally for DKG signature exchange
-
-
 class Duty(BaseModel):
     """A validator duty at a specific slot.
 
