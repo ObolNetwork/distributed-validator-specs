@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from typing import Callable
 
-from .message import Duty, DutyType, ParSignedDataSet
+from dv_spec.types.duty import Duty, DutyType
+
+from .message import ParSignedDataSet
 
 # Protocol constants
 PROTOCOL_ID = "/charon/parsigex/2.0.0"

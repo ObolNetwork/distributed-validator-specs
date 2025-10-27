@@ -27,7 +27,7 @@ class DutyType(IntEnum):
 class Duty(BaseModel):
     """A duty assigned to a validator."""
 
-    slot: int = Field(description="The slot number for the duty.")
+    slot: int = Field(ge=0, description="The slot number for the duty.")
     type: DutyType = Field(description="The type of duty, represented as an integer.")
 
     def __hash__(self) -> int:

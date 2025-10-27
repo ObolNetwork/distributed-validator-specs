@@ -5,6 +5,8 @@ used to broadcast and receive partially signed validator duty data among
 distributed validator nodes.
 """
 
+from dv_spec.types.duty import Duty, DutyType
+
 from .helpers import (
     PROTOCOL_ID,
     count_shares,
@@ -14,8 +16,6 @@ from .helpers import (
     validate_share_indices,
 )
 from .message import (
-    Duty,
-    DutyType,
     ParSigExMsg,
     ParSignedData,
     ParSignedDataSet,

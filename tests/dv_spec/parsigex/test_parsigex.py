@@ -164,17 +164,19 @@ def test_validate_share_indices() -> None:
 def test_duty_type_values() -> None:
     """Test DutyType enum values match expected constants."""
     assert DutyType.UNKNOWN.value == 0
-    assert DutyType.ATTESTER.value == 1
-    assert DutyType.PROPOSER.value == 2
-    assert DutyType.RANDAO.value == 3
-    assert DutyType.PREPARE_AGGREGATOR.value == 4
-    assert DutyType.AGGREGATOR.value == 5
-    assert DutyType.SYNC_MESSAGE.value == 6
-    assert DutyType.PREPARE_SYNC_CONTRIBUTION.value == 7
-    assert DutyType.SYNC_CONTRIBUTION.value == 8
-    assert DutyType.EXIT.value == 9
-    assert DutyType.BUILDER_REGISTRATION.value == 10
-    assert DutyType.SIGNATURE.value == 12
+    assert DutyType.PROPOSER.value == 1
+    assert DutyType.ATTESTER.value == 2
+    assert DutyType.SIGNATURE.value == 3
+    assert DutyType.EXIT.value == 4
+    # assert DutyType.BUILDER_PROPOSER.value == 5  # Deprecated
+    assert DutyType.BUILDER_REGISTRATION.value == 6
+    assert DutyType.RANDAO.value == 7
+    assert DutyType.PREPARE_AGGREGATOR.value == 8
+    assert DutyType.AGGREGATOR.value == 9
+    assert DutyType.SYNC_MESSAGE.value == 10
+    assert DutyType.PREPARE_SYNC_CONTRIBUTION.value == 11
+    assert DutyType.SYNC_CONTRIBUTION.value == 12
+    assert DutyType.INFO_SYNC.value == 13
 
 
 def test_json_serialization() -> None:

@@ -11,21 +11,9 @@ the-wire message structures.
 
 from __future__ import annotations
 
-from enum import IntEnum
-
 from pydantic import BaseModel, Field
 
-
-class Duty(BaseModel):
-    """A validator duty at a specific slot.
-
-    Identifies what action is being performed and when.
-    """
-
-    model_config = {"frozen": True}  # Make hashable
-
-    slot: int = Field(ge=0, description="Beacon chain slot number")
-    type: DutyType = Field(description="Type of duty being performed")
+from dv_spec.types.duty import Duty
 
 
 class ParSignedData(BaseModel):
