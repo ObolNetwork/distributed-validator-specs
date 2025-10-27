@@ -39,63 +39,70 @@ uv run pytest
 
 ## What's Included
 
-This repository currently provides:
+Interoperability specs and reference models:
 
-- **DistributedValidator**: Core specification for distributed validators with cluster metadata, operator lists, and consensus thresholds
-- **ValidatorCluster**: Grouping mechanism for multiple distributed validators  
-- **Ethereum Types**: Compatible base types (Uint64, Bytes32) that match Ethereum specifications
-- **Validation**: Automatic Pydantic validation for all protocol constraints
-- **Testing**: Comprehensive test suite with 100% coverage
-- **Development Tools**: Full toolchain with linting, type checking, and documentation
+- Consensus (QBFT): wire protocol, message shapes, validation rules, leader/round semantics, and hashing/signing conventions
+- Types and primitives: base types and helpers used by the specs
+- Tests and docs: verification and documentation for implementers
 
-### Hello World Example
+### Where to start
 
-```python
-from dv_spec import DistributedValidator, hello_distributed_validator
-from dv_spec.types import Bytes32, Uint64
-
-# Test the basic functionality
-print(hello_distributed_validator())
-# Output: "Hello from the Obol Distributed Validator Network!"
-
-# Create a basic distributed validator
-dv = DistributedValidator(
-    validator_index=Uint64(1),
-    pubkey=Bytes32(b"validator_pubkey_32_bytes_here"),  
-    cluster_id=Bytes32(b"cluster_id_32_bytes_here____"),
-    operators=[Bytes32(b"operator_key_32_bytes_here___")],
-    threshold=Uint64(1)
-)
-
-print(f"Created DV {dv.validator_index} with {len(dv.operators)} operators")
-```
+- QBFT consensus interop: `docs/dv-spec/consensus/consensus.md`
 
 ### Project Structure
 
 ```
 ├── src/
-│   └── dv_spec/                    # Main distributed validator specs
-│       ├── __init__.py             # Package exports
-│       ├── validator.py            # Core DV data structures
-│       ├── client/                 # Client configuration
-│       │   ├── nodes.yaml          # Node configuration examples
-│       │   └── validators.yaml     # Validator configuration examples
-│       ├── subspecs/               # Future protocol subspecifications
-│       │   └── __init__.py         # Reserved for extensions
-│       └── types/                  # Base types and primitives
-│           ├── __init__.py         # Type exports
-│           ├── base.py             # Base Pydantic models
-│           ├── hash.py             # Hash types (Bytes32, etc.)
-│           ├── uint64.py           # Ethereum uint64 type
-│           └── validator.py        # Validator-specific types
-├── tests/                          # Test suite
-│   ├── conftest.py                 # Pytest configuration
-│   └── dv_spec/                    # Tests for specifications
-│       ├── test_dvspec.py          # Basic package tests
-│       └── test_validator.py       # Validator specification tests
-├── docs/                           # MkDocs documentation
-├── pyproject.toml                  # Project configuration & dependencies
-└── CLAUDE.md                       # Development guide
+│   └── dv_spec/                      # Library: specs and reference models
+│       ├── __init__.py
+│       ├── validator.py              # Core DV data structures (types/helpers)
+│       ├── client/
+│       │   ├── nodes.yaml
+│       │   └── validators.yaml
+│       ├── subspecs/
+│       │   ├── __init__.py
+│       │   └── consensus/
+│       │       ├── __init__.py
+│       │       ├── cryptography.py   # Placeholder for cryptographic utils
+│       │       ├── qbft/             # QBFT consensus spec
+│       │       │   ├── __init__.py
+│       │       │   ├── definition.py
+│       │       │   ├── message.py
+│       │       │   ├── protocol.py
+│       │       │   └── transport.py
+│       │       └── timer/            # Consensus timers spec
+│       │           ├── __init__.py
+│       │           └── timer.py
+│       └── types/                    # Ethereum-compatible base types
+│           ├── __init__.py
+│           ├── base.py
+│           ├── basispt.py
+│           ├── duty.py
+│           ├── hash.py
+│           ├── uint64.py
+│           └── validator.py
+├── tests/
+│   ├── conftest.py
+│   └── dv_spec/
+│       ├── test_dvspec.py
+│       ├── test_validator.py
+│       ├── consensus/                # Consensus tests
+│       │   └── ...
+│       └── types/
+│           └── ...
+├── docs/
+│   ├── index.md
+│   ├── dv-spec/
+│   │   └── consensus/
+│   │       └── consensus.md         # QBFT interop spec
+│   └── client/
+│       ├── chain.md
+│       ├── containers.md
+│       ├── networking.md
+│       └── validator.md
+├── pyproject.toml
+├── mkdocs.yml
+└── CLAUDE.md
 ```
 
 ### Workspace Commands
@@ -172,80 +179,6 @@ uv run mkdocs serve
 
 # Build docs
 uv run mkdocs build
-```
-
-## Writing Distributed Validator Specifications
-
-### Core Concepts
-
-This repository uses **Pydantic models** to define distributed validator data structures with automatic validation:
-
-- **DistributedValidator**: Core specification for a DV with cluster info, operators, and thresholds
-- **ValidatorCluster**: Groups of distributed validators operating together
-- **Types**: Ethereum-compatible base types (Uint64, Bytes32, etc.)
-
-### Example: Basic Distributed Validator
-
-```python
-from dv_spec import DistributedValidator, hello_distributed_validator
-from dv_spec.types import Bytes32, Uint64
-
-# Create a distributed validator specification
-dv = DistributedValidator(
-    validator_index=Uint64(1),
-    pubkey=Bytes32(b"validator_pubkey_32_bytes_here"),
-    cluster_id=Bytes32(b"cluster_id_32_bytes_here____"),
-    operators=[
-        Bytes32(b"operator1_pubkey_32_bytes_here"),
-        Bytes32(b"operator2_pubkey_32_bytes_here"),
-    ],
-    threshold=Uint64(2),  # Need 2 of 2 operators for consensus
-)
-
-print(hello_distributed_validator())
-print(f"DV {dv.validator_index} in cluster {dv.cluster_id.hex()[:8]}...")
-```
-
-### Example: Writing Tests
-
-```python
-# tests/dv_spec/test_my_feature.py
-import pytest
-from pydantic import ValidationError
-from dv_spec import DistributedValidator
-from dv_spec.types import Bytes32, Uint64
-
-
-# Parametrized test - test multiple threshold values
-@pytest.mark.parametrize("threshold", [1, 2, 5, 10])
-def test_distributed_validator_threshold(threshold):
-    """Test different threshold values for distributed validators."""
-    operators = [Bytes32(f"operator{i}_key" + b"\x00" * 19) for i in range(threshold)]
-    
-    dv = DistributedValidator(
-        validator_index=Uint64(1),
-        pubkey=Bytes32(b"validator_pubkey" + b"\x00" * 16),
-        cluster_id=Bytes32(b"cluster_id" + b"\x00" * 22),
-        operators=operators,
-        threshold=Uint64(threshold),
-    )
-    
-    assert dv.threshold == threshold
-    assert len(dv.operators) == threshold
-
-
-# Exception testing
-def test_distributed_validator_empty_operators():
-    """Test that empty operators list raises validation error."""
-    with pytest.raises(ValidationError) as exc_info:
-        DistributedValidator(
-            validator_index=Uint64(1),
-            pubkey=Bytes32(b"validator_pubkey" + b"\x00" * 16),
-            cluster_id=Bytes32(b"cluster_id" + b"\x00" * 22),
-            operators=[],  # Empty list should fail validation
-            threshold=Uint64(1),
-        )
-    assert "operators" in str(exc_info.value).lower()
 ```
 
 ## Development Tools Guide
