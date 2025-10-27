@@ -29,7 +29,7 @@ All messages are sent under protocol ID:
 
 ### Exchange pattern
 
-ParSigEx implements a simple broadcast-and-subscribe pattern:
+ParSigEx implements a broadcast-and-subscribe pattern:
 
 1. **Internal storage trigger**: When a node produces a partial signature (e.g., from the validator API), it stores it in the partial signature database (ParSigDB).
 
@@ -57,23 +57,6 @@ The following structures are used over the wire. The protobufs used by Charon ar
   - data: bytes // serialized SignedData (duty-type specific)
   - signature: bytes // BLS signature share
   - share_idx: int32 // operator index (0-based in protocol)
-
-### Duty types
-
-ParSigEx exchanges partial signatures for various validator duties:
-
-- **DutyAttester**: Attestation to a beacon block
-- **DutyProposer**: Beacon block proposal
-- **DutyRandao**: RANDAO reveal for block proposal
-- **DutyPrepareAggregator**: Beacon committee aggregator selection proof
-- **DutyAggregator**: Aggregated attestation and proof
-- **DutySyncMessage**: Sync committee message
-- **DutyPrepareSyncContribution**: Sync committee contribution selection proof
-- **DutySyncContribution**: Sync committee contribution and proof
-- **DutyExit**: Voluntary validator exit
-- **DutyBuilderRegistration**: Builder API validator registration
-
-Each duty type has its own SignedData structure encoding the relevant Ethereum consensus layer data.
 
 ### Protocol flow
 
