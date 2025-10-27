@@ -59,6 +59,8 @@ The protobufs used by Charon are available [here](https://github.com/ObolNetwork
 
 ### Interop notes
 
-- Hashing discipline is critical: use exactly SHA256(type_url || value) bytes.
-- The type_url should uniquely identify the embedded message schema (e.g., a Protobuf URL or stable string).
-- Canonical order must be shared across peers (e.g., lock/operator order) to align signature ordering.
+- **Hashing discipline** is critical: use exactly SHA256(type_url || value) bytes.
+- The **type_url** should uniquely identify the embedded message schema (e.g., a Protobuf URL or stable string).
+- **Canonical order** must be shared across peers (e.g., lock/operator order) to align signature ordering.
+- **Timeouts**: Server uses 1-minute receive timeout; client uses 62-second send timeout (allows server to timeout first).
+- **Deduplication**: Per (requester_peer_id, message_id) pair - prevents equivocation but allows the same requester to use different message_ids.

@@ -149,8 +149,8 @@ Reference Python models are provided in `dv_spec.subspecs.dkg.pedersen`.
      - Nonce: SHA256(concat(pubkey_i)) from step 1
      - Nodes: ordered by peer index
      - Threshold: t
-     - FastSync: true
-     - Auth: BDN BLS on G2
+     - FastSync: true (Kyber library optimization for skipping deal verification)
+     - Auth: BDN BLS on G2 (signature scheme for authenticating DKG messages)
    - Exchanges occur by sending/receiving the following bundles to all peers:
      - PedersenDealBundle, PedersenResponseBundle, PedersenJustificationBundle
    - Each run yields a DistKeyShare (validator secret share + pub commitments).

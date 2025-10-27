@@ -125,7 +125,7 @@ This prevents nodes from processing or storing irrelevant partial signatures.
 
 ### Properties
 
-- **All-to-all exchange**: Every node broadcasts to every other node (n^2 messages per duty)
+- **All-to-all exchange**: Every node broadcasts to every other node
 - **Idempotent**: Receiving the same partial signature multiple times is harmless (deduplicated in ParSigDB)
 - **Best-effort delivery**: Uses libp2p direct streams with timeouts; retries are not automatic
 - **Signature verification**: All received partial signatures are verified before acceptance

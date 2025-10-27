@@ -99,7 +99,7 @@ The cluster lock file extends the cluster definition with distributed validator 
   ],
   "signature_aggregate": "0xabcdef...abcedef", // BLS aggregate signature of lock_hash
   "lock_hash": "0xabcdef...abcedef",           // Hash of definition + distributed_validators
-  "node_signatures": [                         // Signature of lock_hash by each operator
+  "node_signatures": [                         // secp256k1 (65-byte R||S||V) signature of lock_hash by each operator's ENR key
     "0x123456...abcdef"
   ]
 }
@@ -108,12 +108,12 @@ The cluster lock file extends the cluster definition with distributed validator 
 **Key Fields:**
 
 - `distributed_validators`: Array containing DV public keys and key shares for each validator
-- `public_shares`: One BLS public key share per operator, ordered canonically by operator index
+- `public_shares`: One BLS public key share per operator, ordered canonically by operator index (1-based indexing in the map)
 - `partial_deposit_data`: Deposit data for each partial deposit (supports split deposits)
 - `builder_registration`: Pre-signed MEV-boost builder registration for the validator
 - `signature_aggregate`: BLS aggregate signature proving all key shares exist and attest to the cluster
 - `lock_hash`: Unique identifier for the cluster lock (hash of definition + validators)
-- `node_signatures`: secp256k1 signatures by each operator's ENR key over the lock_hash (v1.7.0+)
+- `node_signatures`: secp256k1 signatures (65-byte R||S||V format) by each operator's ENR private key over the lock_hash (v1.7.0+)
 
 ### Additional Persistent Files
 
