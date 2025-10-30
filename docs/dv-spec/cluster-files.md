@@ -61,7 +61,7 @@ The cluster definition file defines the intended cluster configuration before ke
 - `fork_version`: Network identifier (e.g., mainnet: `0x00000000`, hoodi: `0x10000910`, sepolia: `0x90000069`)
 - `definition_hash`: Merkle root used to confirm no ambiguity between definitions
 - `config_hash`: Hash of the static (non-changing) fields
-- `deposit_amounts`: List of partial deposit amounts that must sum to at least 32 ETH // Kalo: Can we double check if that still holds? I think for 0x02 we have different logic.
+- `deposit_amounts`: List of partial deposit amounts in gwei. Each amount must be at least 1 ETH (1000000000 gwei).Individual deposits are limited to 32 ETH for standard validators or 2048 ETH for compounding validators (those using 0x02 withdrawal credentials per EIP-7251).
 
 ### cluster-lock.json
 
@@ -69,42 +69,40 @@ The cluster lock file extends the cluster definition with distributed validator 
 
 **Schema:**
 
-// Kalo: Apply the changes from the definition here as well in a similar fashion.
-
 ```json
 {
   "cluster_definition": {...},               // Identical to cluster-definition.json
   "distributed_validators": [
     {
-      "distributed_public_key": "0x123..abfc", // DV root pubkey
+      "distributed_public_key": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef", // DV root pubkey
       "public_shares": [                     // Public share for each operator
-        "0x123..abfc",
-        "0x123..abfc"
+        "0x000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef",
+        "0x000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef"
       ],
       "partial_deposit_data": [              // Deposit data to activate validator
         {
-          "pubkey": "0x123..abfc",
-          "withdrawal_credentials": "0x123..abfc",
+          "pubkey": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef",
+          "withdrawal_credentials": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef",
           "amount": "32000000000",
-          "signature": "0x123456...abcdef",
-          "deposit_data_root": "0x123456...abcdef"
+          "signature": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef",
+          "deposit_data_root": "0x000000000000000000000000000000000000000000000000000000123456abcdef"
         }
       ],
       "builder_registration": {
         "message": {
-          "fee_recipient": "0x123456...abcdef",
+          "fee_recipient": "0x0000000000000000000000000000123456abcdef",
           "gas_limit": 30000000,
           "timestamp": 1696000704,
-          "pubkey": "0x123456...abcdef"
+          "pubkey": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef"
         },
-        "signature": "0x123456...abcdef"
+        "signature": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef"
       }
     }
   ],
-  "signature_aggregate": "0xabcdef...abcedef", // BLS aggregate signature of lock_hash
-  "lock_hash": "0xabcdef...abcedef",           // Hash of definition + distributed_validators
+  "signature_aggregate": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef", // BLS aggregate signature of lock_hash
+  "lock_hash": "0x0000000000000000000000000000000000000000000000000000123456abcdef",           // Hash of definition + distributed_validators
   "node_signatures": [                         // secp256k1 (65-byte R||S||V) signature of lock_hash by each operator's ENR key
-    "0x123456...abcdef"
+    "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000123456abcdef"
   ]
 }
 ```
@@ -117,7 +115,7 @@ The cluster lock file extends the cluster definition with distributed validator 
 - `builder_registration`: Pre-signed builder registration for the validator
 - `signature_aggregate`: BLS aggregate signature proving all key shares exist
 - `lock_hash`: Unique identifier for the cluster lock (hash of definition + validators)
-- `node_signatures`: secp256k1 signatures (65-byte R||S||V format) by each operator's ENR private key over the lock_hash (v1.7.0+) // Kalo: we should not specify versions here. I think we should be releasing (read as tagging) this spec for a cluster definition/lock version. The version of the release should dictate where this is applicable. The first tag should be our latest version.
+- `node_signatures`: secp256k1 signatures (65-byte R||S||V format) by each operator's ENR private key over the lock_hash
 
 ### Additional Persistent Files
 
@@ -139,21 +137,6 @@ The cluster lock file extends the cluster definition with distributed validator 
 - Storage: Should be kept secret and backed up by each operator
 - Note: Each operator holds different key shares
 
-### Version History
-
-The cluster file schemas have evolved to support additional features:
-
-- **v1.0.0**: Initial definition and lock versions
-- **v1.1.0**: Added `timestamp` field for human identification
-- **v1.2.0**: Refactored to 0x-prefixed hex format (Ethereum standard), removed unused `nonce` field
-- **v1.3.0**: Added EIP712 signatures for operators (`config_signature`, `enr_signature`)
-- **v1.4.0**: Added `creator` field to track cluster creator
-- **v1.5.0**: Support for multiple validator addresses per validator
-- **v1.6.0**: Added `builder_registration` for MEV-boost support
-- **v1.7.0**: Added `node_signatures` field to lock for operator attestation
-- **v1.8.0+**: Added `deposit_amounts` for partial deposits, `target_gas_limit`, and compounding withdrawals support
-
-// Kalo: I don't think we should include all this under this header. It's purely operational IMO and can be seen in our docs. I think we should keep it purely tech focused here.
 ### Cluster Lifecycle and File Flow
 
 ```
@@ -189,35 +172,270 @@ DV Launchpad / CLI ─┐
      - `definition_hash` matches the agreed-upon configuration
      - `lock_hash` is correctly computed
      - `signature_aggregate` proves all key shares were generated correctly
-     - `node_signatures` attest all operators participated (v1.7.0+)
+     - `node_signatures` attest all operators participated
 
 5. **Runtime**:
    - DV nodes load `cluster-lock.json` and their validator key shares
    - Nodes use the configuration to coordinate validator duties
    - The lock file ensures all nodes operate with identical cluster parameters
 
+### Hash Computation and Signing
+
+This section specifies how to compute hashes and signing data for cluster files. **Field ordering during serialization is critical**. The order specified below must be followed exactly.
+
+#### Definition Hash Computation
+
+There are two hashes computed for a cluster definition:
+
+1. **config_hash**: Hash of static configuration fields (excludes operator ENRs and signatures)
+2. **definition_hash**: Hash of all fields including ENRs and signatures
+
+Both hashes use SSZ (Simple Serialize) merkleization.
+
+**Config Hash**:
+
+```
+SSZ Merkleize of:
+  Field 0: UUID (ByteList[64])
+  Field 1: Name (ByteList[256])
+  Field 2: Version (ByteList[16])
+  Field 3: Timestamp (ByteList[32])
+  Field 4: NumValidators (uint64)
+  Field 5: Threshold (uint64)
+  Field 6: DKGAlgorithm (ByteList[32])
+  Field 7: ForkVersion (Bytes4)
+  Field 8: Operators (CompositeList[256])
+    For each operator:
+      Field 0: Address (Bytes20) - parsed from 0x-prefixed hex string
+  Field 9: Creator (Composite)
+    Field 0: Address (Bytes20) - parsed from 0x-prefixed hex string
+  Field 10: ValidatorAddresses (CompositeList[65536])
+    For each validator address:
+      Field 0: FeeRecipientAddress (Bytes20) - parsed from 0x-prefixed hex
+      Field 1: WithdrawalAddress (Bytes20) - parsed from 0x-prefixed hex
+  Field 11: DepositAmounts (uint64[256])
+  Field 12: ConsensusProtocol (ByteList[256])
+  Field 13: TargetGasLimit (uint64)
+  Field 14: Compounding (bool)
+```
+
+**Definition Hash**:
+
+```
+SSZ Merkleize of:
+  Field 0-10: Same as config hash
+  Field 8: Operators (CompositeList[256])
+    For each operator:
+      Field 0: Address (Bytes20)
+      Field 1: ENR (ByteList[1024]) - encoded as UTF-8 bytes of ENR string
+      Field 2: ConfigSignature (Bytes65)
+      Field 3: ENRSignature (Bytes65)
+  Field 9: Creator (Composite)
+    Field 0: Address (Bytes20)
+    Field 1: ConfigSignature (Bytes65)
+  Field 10: ValidatorAddresses - same as config hash
+  Field 11: DepositAmounts (uint64[256])
+  Field 12: ConsensusProtocol (ByteList[256])
+  Field 13: TargetGasLimit (uint64)
+  Field 14: Compounding (bool)
+  Field 15: ConfigHash (Bytes32) - the config_hash computed above
+```
+
+**Important Notes:**
+
+- Bytes20 fields (addresses): Parse from 0x-prefixed hex string to raw 20 bytes
+- Bytes4 (fork_version): Use raw 4 bytes
+- ByteList fields: UTF-8 encode strings, then SSZ serialize as variable-length byte list with max length
+- CompositeList: SSZ merkleize each composite element, then merkleize the list with mixin for max length
+- Ordering: Fields must be hashed in exact numerical order shown above
+
+#### Lock Hash Computation
+
+The lock hash uniquely identifies a cluster lock file. It is computed as:
+
+```
+SSZ Merkleize of:
+  Field 0: Definition (Composite) - full definition hash as above
+  Field 1: Validators (CompositeList[65536])
+    For each DistValidator:
+      Field 0: PubKey (Bytes48)
+      Field 1: PubShares (CompositeList[256])
+        For each pubshare: Bytes48
+      Field 2: PartialDepositData (CompositeList[256])
+        For each deposit data:
+          Field 0: PubKey (Bytes48)
+          Field 1: WithdrawalCredentials (Bytes32)
+          Field 2: Amount (uint64)
+          Field 3: Signature (Bytes96)
+      Field 3: BuilderRegistration (Composite)
+        Field 0: Message (Composite)
+          Field 0: FeeRecipient (Bytes20)
+          Field 1: GasLimit (uint64)
+          Field 2: Timestamp (uint64) - Unix timestamp
+          Field 3: PubKey (Bytes48)
+        Field 1: Signature (Bytes96)
+```
+
+#### EIP-712 Signature Computation
+
+The cluster uses EIP-712 typed structured data signatures for creator and operator attestations. This allows users to see what they're signing in wallets like MetaMask.
+
+**EIP-712 Domain:**
+
+```javascript
+{
+  name: "Obol",
+  version: "1",
+  chainId: <network_chain_id> // e.g., 1 for mainnet
+}
+```
+
+##### Creator Config Signature
+
+**Primary Type:** `CreatorConfigHash`
+
+**Type Definition:**
+
+```javascript
+{
+  CreatorConfigHash: [{ name: "creator_config_hash", type: "string" }];
+}
+```
+
+**Message:**
+
+```javascript
+{
+  creator_config_hash: "0x<config_hash_hex>"; // 0x-prefixed hex of config_hash
+}
+```
+
+**Signature Process:**
+
+1. Compute config_hash as specified above
+2. Create EIP-712 typed data with domain and message
+3. Compute EIP-712 digest: `keccak256("\x19\x01" || domainSeparator || structHash)`
+4. Sign digest with creator's ETH1 private key using secp256k1
+5. Encode signature as 65-byte R||S||V format
+
+##### Operator Config Signature
+
+**Primary Type:** `OperatorConfigHash`
+
+**Type Definition:**
+
+```javascript
+{
+  OperatorConfigHash: [{ name: "operator_config_hash", type: "string" }];
+}
+```
+
+**Message:**
+
+```javascript
+{
+  operator_config_hash: "0x<config_hash_hex>";
+}
+```
+
+Signature process is identical to creator config signature.
+
+##### Operator ENR Signature
+
+**Primary Type:** `ENR`
+
+**Type Definition:**
+
+```javascript
+{
+  ENR: [{ name: "enr", type: "string" }];
+}
+```
+
+**Message:**
+
+```javascript
+{
+  enr: "<operator_enr_string>"; // e.g., "enr:-HW4Q..."
+}
+```
+
+#### Lock Hash Signatures
+
+Two types of signatures attest to the lock hash:
+
+##### 1. BLS Aggregate Signature (signature_aggregate)
+
+**Purpose:** Proves that all threshold key shares were correctly generated and operators possess their shares.
+
+**When Created:** During the DKG ceremony, immediately after all validators' threshold key shares have been successfully generated and distributed to operators.
+
+**Process:**
+
+1. Compute lock_hash via SSZ as specified above
+2. Each operator signs lock_hash with all of their BLS secret shares (one share per validator)
+3. All partial signatures are exchanged between operators
+4. All partial signatures are aggregated into a single BLS signature using BLS signature aggregation
+5. Verification: Aggregate public key (from all validator public shares) must verify the aggregate signature over lock_hash
+
+##### 2. Node Signatures (node_signatures)
+
+**Purpose:** Attestation by each operator that they participated in DKG and accept the lock.
+
+**When Created:** During the DKG ceremony, immediately AFTER the BLS aggregate signature has been created and verified. This is the final step before the cluster lock file is written to disk. Each operator creates their signature independently using their ENR private key.
+
+**Process:**
+
+1. Compute lock_hash via SSZ
+2. Each operator signs lock_hash with their ENR private key (secp256k1)
+3. All operators broadcast and collect each other's signatures
+   - This ensures all operators can produce an identical cluster-lock.json file
+   - The final `node_signatures` array contains one signature per operator
+4. Signature format: 65-byte R||S||V format (same as Ethereum transactions)
+
+**Verification:**
+
+- Recover public key from signature and lock_hash
+- Verify recovered public key matches operator's ENR public key
+
 ### Implementation Notes
 
-// Kalo: Probably we should include how we compute each hash and signing data? Ordering during serialisation matters and it's not straightforward.
 **Hash Computation**:
 
-- Use SSZ (Simple Serialize) for hashing lock and definition structures
-- Field ordering and hash tree structure must be consistent with the version
+- Use SSZ (Simple Serialize) for all hashing operations
+- Field ordering must exactly match the version-specific schemas above
+- Use SSZ merkleization with appropriate max lengths for lists
+- All hash outputs are 32 bytes (SHA256-based)
+
+**Byte Encoding**:
+
+- **Bytes20/Bytes32/Bytes48/Bytes96**: Fixed-length byte arrays
+- **ByteList[N]**: Variable-length byte array with maximum length N
+- **CompositeList[N]**: List of composite structures with maximum length N
+- **Hex strings**: Parse from 0x-prefixed format to raw bytes before hashing
 
 **Signature Formats**:
 
-- BLS signatures: 96 bytes (BLS12-381)
-- secp256k1 signatures: 65 bytes (R || S || V format)
-- ETH1 addresses: 20 bytes, 0x-prefixed hex in JSON
+- BLS signatures: 96 bytes (BLS12-381 G1 compressed)
+- secp256k1 signatures: 65 bytes (R || S || V format where V ∈ {0, 1})
+- ETH1 addresses: 20 bytes, displayed as 0x-prefixed hex in JSON
 
 **ENR (Ethereum Node Record)**:
 
 - Encoded as base64 string with `enr:-` prefix
 - Contains the node's secp256k1 public key and network metadata
 - Used for peer discovery and identity verification
+- ENR private key is used to sign node_signatures
+
+**SSZ Merkleization Details**:
+
+- Use `fastssz` library or equivalent SSZ implementation
+- `MerkleizeWithMixin(index, count, maxLength)` for lists
+- `Merkleize(index)` for composites
+- `PutBytes()`, `PutUint64()`, `PutBool()` for primitive types
 
 **Backwards Compatibility**:
 
 - Clusters cannot migrate yet from old to new lock format, meaning its up to the implementer to decide if it supports old formats
-- When writing, use the latest supported version // Kalo: When writing... what?
 - Always verify the `version` field before parsing
+- Implementers must support all versions they wish to be compatible with
