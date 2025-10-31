@@ -1,8 +1,0 @@
-syntax = "proto3";
-
-package core.corepb.v1;
-
-message Duty {    
-  uint64 slot   = 1; 
-  int32 type    = 2;
-}

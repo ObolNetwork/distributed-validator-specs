@@ -1,4 +1,4 @@
-# Partial Signature Exchange (ParSigEx) interoperability spec
+# Partial Signature Exchange Interoperability Spec
 
 This document describes the Partial Signature Exchange protocol used for exchanging partially signed duty data among distributed validator nodes.
 
@@ -17,7 +17,8 @@ Out of scope: cryptographic signature routines, threshold aggregation logic, tra
 - `Duty`: a validator's responsibility at a specific slot (e.g., attestation)
 - `ParSignedData`: a partially signed duty data item containing a signature share from one node
 - `ParSignedDataSet`: a mapping of validator public keys to their ParSignedData
-- `ShareIndex`: the 0-based or 1-based index identifying which operator produced a partial signature // Kalo: how is it "0-based or 1-based"? isn't it simply 0-based
+- `ShareIndex`: the 1-indexed share index identifying which operator produced a partial signature
+- `ParSigDB`: local database storing received partial signatures for duties
 
 ## Protocol identifiers (libp2p)
 
@@ -31,49 +32,30 @@ All messages are sent under protocol ID:
 
 `ParSigEx` implements a broadcast-and-subscribe pattern:
 
-1. **Internal storage trigger**: When a node produces a partial signature (e.g.: from the validator API), it stores it in the partial signature database (`ParSigDB`). // Kalo: Probably we should add the DB to the Terms and notation
+1. **Internal storage trigger**: When a node produces a partial signature (e.g.: from the validator API), it stores it in the partial signature database (`ParSigDB`).
 
 2. **Broadcast phase**: The `ParSigDB` triggers the `ParSigEx` component to broadcast the partial signature set to all peers.
 
 3. **Reception and verification**: Each peer receives the broadcast, verifies the partial signature(s), and stores them in its own `ParSigDB`.
 
-4. **Threshold detection**: Once `ParSigDB` accumulates _threshold_ valid partial signatures for a duty, it triggers the signature aggregation component.
+4. **Threshold detection**: Once `ParSigDB` accumulates `t` valid partial signatures for a duty, it triggers the signature aggregation component.
 
 The exchange ensures that all nodes eventually have access to all partial signatures, enabling any node to aggregate signatures when the threshold is reached.
 
-## Message schemas (protobuf-equivalent)
+## Message Schemas
 
-The following structures are used over the wire. The protobufs used by Charon are available [here](https://github.com/ObolNetwork/charon/tree/main/core/corepb/v1). // Kalo: No Charon references.
+The following protobuf definitions are used over the wire:
 
-- ParSigExMsg
+- [parsigex.proto](../../proto/parsigex.proto) - ParSigEx message definitions
+- [core.proto](../../proto/core.proto) - Common core type definitions (Duty, ParSignedData, ParSignedDataSet)
 
-  - duty: Duty
-    - slot: uint64
-    - type: DutyType (int32)
-  - data_set: ParSignedDataSet
-    - set: map[string -> ParSignedData] // keyed by validator public key bytes
-
-- ParSignedData
-  - data: bytes // serialized SignedData (duty-type specific)
-  - signature: bytes // BLS signature share
-  - share_idx: int32 // operator index (0-based in protocol)
+See the Python reference implementation: [`ParSigExMsg`](../../src/dv_spec/subspecs/parsigex/message.py#L46-L56), [`ParSignedData`](../../src/dv_spec/subspecs/parsigex/message.py#L19-L31), [`ParSignedDataSet`](../../src/dv_spec/subspecs/parsigex/message.py#L33-L43), and [`Duty`](../../src/dv_spec/types/duty.py#L27-L40).
 
 ## Protocol flow
 
 ## 1. Broadcast
 
-When a node has a new partial signature to share:
-
-```
-for each peer in peers:
-  if peer != self:
-    send ParSigExMsg to peer via libp2p
-```
-
-The message contains:
-
-- The duty being performed (slot + duty type)
-- A set of partial signatures (typically one per validator the node is responsible for)
+When a node has a new partial signature to share, it constructs a `ParSigExMsg` containing the duty and the `ParSignedDataSet` (typically containing just the new partial signature) and broadcasts it to all peers.
 
 ## 2. Reception and handling
 

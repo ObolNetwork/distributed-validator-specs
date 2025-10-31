@@ -1,4 +1,4 @@
-## Consensus and QBFT Interoperability Spec
+# Consensus and QBFT Interoperability Spec
 
 This document describes the QBFT consensus protocol used for reaching agreement among distributed validator nodes.
 
@@ -11,7 +11,7 @@ Scope:
 
 Out of scope: cluster discovery/formation, storage, application-specific value encoding beyond the hashing contract, and any non-libp2p transport.
 
-### Terms and notation
+## Terms and notation
 
 - `n`: Number of nodes in the cluster
 - `f`: Maximum Byzantine faults tolerated, where f < n/3
@@ -20,7 +20,7 @@ Out of scope: cluster discovery/formation, storage, application-specific value e
 - `round`: 1-based counter for coordination. Rounds increase on timeout or failure
 - `peer_idx`: 0-based index into membership list, maps to a configured public key
 
-### Protocol identifiers (libp2p)
+## Protocol identifiers (libp2p)
 
 All messages are sent under protocol ID:
 
@@ -28,14 +28,14 @@ All messages are sent under protocol ID:
 /charon/consensus/qbft/2.0.0
 ```
 
-### Consensus Flow
+## Consensus Flow
 
 QBFT operates in rounds. Each round attempts to reach consensus through three phases:
 
 **Normal operation:**
 
 1. **Pre-Prepare**: The leader for `(duty, round)` proposes a value `V` by broadcasting `PRE_PREPARE(round, V)`
-2. **Prepare**: Upon receiving a valid `PRE_PREPARE`, nodes broadcast `PREPARE(round, V)`
+2. **Prepare**: Upon receiving a justified `PRE_PREPARE`, nodes broadcast `PREPARE(round, V)`
 3. **Commit**: Upon receiving quorum `PREPARE(round, V)`, nodes broadcast `COMMIT(round, V)`
 4. **Decision**: Upon receiving quorum `COMMIT(round, V)`, nodes decide on `V`
 
@@ -62,21 +62,22 @@ leader_index = (duty.slot + duty.type + round) % n
 
 - Each round runs under a timer
 - On timeout, nodes trigger a round change and increment the round
-- Timer/backoff strategy is implementation-defined but must guarantee eventual progress // Kalo: Probably it's good to devote a paragraph for the timers we have
+- Timer/backoff strategy is implementation-defined but must guarantee eventual progress
+
+See the Python reference implementation: [`RoundTimer`](../../src/dv_spec/subspecs/consensus/timer/timer.py).
 
 **Decided messages:**
 
-- `DECIDED` messages are optional
-- Consensus is achieved upon quorum `COMMIT(r, V)`; `DECIDED` messages are informational
+`DECIDED` messages are optional since consensus is achieved upon quorum `COMMIT(r, V)`, however they can be used to help slow nodes catch up.
 
 ### Message Schemas
 
-The following structures are used over the wire. The protobuf definitions are available in this repository:
+The following protobuf definitions are used over the wire:
 
-- [consensus.proto](../../proto/consensus/consensus.proto) - QBFT consensus message definitions
-- [core.proto](../../proto/consensus/core.proto) - Duty definition
+- [consensus.proto](../../proto/consensus.proto) - QBFT consensus message definitions
+- [core.proto](../../proto/core.proto) - Common core type definitions (Duty, ParSignedData, etc.)
 
-See the Python reference implementation: [`MsgType`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L16-L23), [`QBFTMsg`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L26-L109), [`QBFTConsensusMsg`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L112-L120), [`Duty`](../../src/dv_spec/types/duty.py#L27-L40)
+See the Python reference implementation: [`MsgType`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L16-L23), [`QBFTMsg`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L26-L109), [`QBFTConsensusMsg`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L112-L120), and [`Duty`](../../src/dv_spec/types/duty.py#L27-L40).
 
 **Value carriage:**
 
@@ -93,11 +94,11 @@ Extra values MAY be included; order is irrelevant.
 
 **Hashing:**
 
-- Compute a deterministic hash root for values from deterministic protobuf encodings: `HashRoot(deterministic_proto(value))` // Kalo: Probably good to say that this is done by the leader upon creating the message and is up to the message type and hashing? Or it's obvious?
-- Message signature is computed over: `HashRoot(deterministic_proto(unsigned QBFTMsg))` // Kalo: shouldn't this be under Signature?
+- Leader computes a deterministic hash root for values from deterministic protobuf encodings: `HashRoot(deterministic_proto(value))`
 
 **Signature:**
 
+- Message signature is computed over: `HashRoot(deterministic_proto(unsigned QBFTMsg))`
 - Format: secp256k1 signature (65-byte R||S||V)
 - The public key used for verification can be obtained by matching the `peer_idx` from the message with the `peer_idx` in the lock file (see [Cluster Configuration](cluster-files.md) for lock file structure)
 
@@ -111,7 +112,7 @@ See Python validation implementation: [`QBFTMsg`](../../src/dv_spec/subspecs/con
 - `msg.type` ∈ {1,...,5} (see [`MsgType`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L16-L23))
 - `duty.type` is valid (see [Duty Types](#duty-types))
 - `peer_idx` >= 0 (see [`validate_peer_idx`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L51-L56))
-- `peer_idx` is a valid index in ordered membership and maps to a known public key
+- `peer_idx` is a valid index in ordered peer list and maps to a known public key
 - `signature` is 65 bytes when present (R||S||V format) (see [`validate_signature`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L85-L90))
 - Signature recovery matches the public key for `peer_idx`
 - `round` >= 1 (see [`validate_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L58-L63))
@@ -126,37 +127,67 @@ See Python validation implementation: [`QBFTMsg`](../../src/dv_spec/subspecs/con
 
 ### Field Requirements by Message Type
 
+All message types share these common requirements:
+
+- `type`: MUST be set to the appropriate [`MsgType`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L16-L23)
+- `duty`: MUST be present with valid `slot` and `type` fields
+- `peer_idx`: MUST be >= 0 and a valid index in the ordered peer list
+- `round`: MUST be >= 1
+- `signature`: MUST be 65 bytes (secp256k1 R||S||V format) and verify against the peer's public key
+
 **`PRE_PREPARE`:**
 
-- MUST be sent by the leader of `(duty, round)`
-- MUST set `value_hash` (non-zero)
-- `prepared_round` and `prepared_value_hash` MUST be absent unless entering round via J2
-  - J2 (prepared): MUST set `prepared_round=r*` and `prepared_value_hash=H(V*)` from the justified prepared value // Kalo: What is r* and V* here?
+Sent by the leader of `(duty, round)` only upon startup or round change to every other node.
+
+Required fields:
+
+- `value_hash`: MUST be set (32-byte non-zero hash of proposed value)
+- `prepared_round` and `prepared_value_hash`:
+  - For J1 (null-prepared): MUST be `0` and zero hash (32 zero bytes)
+  - For J2 (prepared): MUST be set to `r*` and `H(V*)` respectively
 - `justification`:
-  - J1 (null-prepared): MUST include quorum `ROUND_CHANGE` messages
-  - J2 (prepared): MUST include quorum `PREPARE` messages for `(r*, V*)`
+  - Round 1: MUST be empty
+  - J1 (null-prepared): MUST include quorum `ROUND_CHANGE` messages with null prepared values
+  - J2 (prepared): MUST include quorum `ROUND_CHANGE` messages AND quorum `PREPARE(r*, V*)` messages
 
 **`PREPARE`:**
 
-- MUST set `value_hash` (non-zero) // Kalo: You mean to set a new `value_hash`? Or it's more like "Must have set"
-- MUST NOT set `prepared_round` or `prepared_value_hash`
-- `justification` SHOULD be empty
+Sent by any node upon receiving justified `PRE_PREPARE` to every other node.
+
+Required fields:
+
+- `value_hash`: MUST be set (32-byte non-zero hash matching the `PRE_PREPARE` value)
 
 **`COMMIT`:**
 
-- MUST set `value_hash` (non-zero)
-- MUST NOT set `prepared_round` or `prepared_value_hash`
-- `justification` MAY be empty (receivers MUST NOT require justification) // Kalo: What are the ocassions at which it's not empty?
+Sent by any node upon receiving quorum `PREPARE` messages to every other node.
+
+Required fields:
+
+- `value_hash`: MUST be set (32-byte non-zero hash of the prepared value)
 
 **`ROUND_CHANGE`:**
 
-- If null-prepared: MUST set `prepared_round=None` and `prepared_value_hash=None`; `justification` MAY be empty
-- If prepared: MUST set `prepared_round=r*` and `prepared_value_hash=H(V*)`; `justification` MUST include quorum `PREPARE(r*, V*)`
+Sent by any node on round timeout or f+1 `ROUND_CHANGE` receipt to every other node.
+
+Required fields:
+
+- `prepared_round`:
+  - If null-prepared: `0`
+  - If prepared: `r*`
+- `prepared_value_hash`:
+  - If null-prepared: `0`
+  - If prepared: `H(V*)` if prepared value `V*`
+- `justification`:
+  - If null-prepared: MUST be empty
+  - If prepared: MUST include quorum `PREPARE(r*, V*)` messages that justify the prepared round and value
 
 **`DECIDED`:**
 
-- Optional message type
-- Receivers MUST tolerate presence/absence
-- MUST NOT rely on `DECIDED` for safety or liveness
+Sent by decided nodes when receiving `ROUND_CHANGE` from late-joining peers.
+Optional message type for optimization, implementations MUST NOT rely on `DECIDED` messages for safety or liveness guarantees
 
-//Kalo: I think in general we can be more descriptive for each consensus message here
+Required fields:
+
+- `value_hash`: MUST be set (32-byte non-zero hash of decided value)
+- `justification`: MUST include quorum `COMMIT(r, V)` messages that achieved consensus

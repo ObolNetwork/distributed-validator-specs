@@ -1,4 +1,4 @@
-## PeerInfo interoperability spec
+# PeerInfo Interoperability Spec
 
 This document describes the PeerInfo protocol used for exchanging node metadata and monitoring cluster health in distributed validator networks.
 
@@ -11,15 +11,15 @@ Scope:
 
 Out of scope: cryptographic signature routines, time synchronization mechanisms, transport reliability;
 
-### Terms and notation
+## Terms and Notation
 
-- n: number of participating nodes in the cluster
-- RTT: round-trip time for a request-response exchange
-- Lock hash: SHA-256 hash of the cluster lock file (ensures identical configuration)
-- Clock offset: time difference between local and peer clocks
-- Semantic version: version format major.minor.patch (e.g., v1.2.3)
+- `n`: number of participating nodes in the cluster
+- `RTT`: round-trip time for a request-response exchange
+- `Lock hash`: SHA-256 hash of the cluster lock file (ensures identical configuration)
+- `Clock offset`: time difference between local and peer clocks
+- `Semantic version`: version format major.minor.patch (e.g., v1.2.3)
 
-### Protocol identifiers (libp2p)
+## Protocol Identifiers (libp2p)
 
 All messages are sent under protocol ID:
 
@@ -27,11 +27,11 @@ All messages are sent under protocol ID:
 /charon/peerinfo/2.0.0
 ```
 
-### Exchange pattern
+## Exchange Pattern
 
 PeerInfo supports two usage patterns:
 
-#### 1. Periodic exchange (Charon nodes)
+### 1. Periodic Exchange (Charon nodes)
 
 Charon validator nodes use a continuous periodic heartbeat:
 
@@ -45,7 +45,7 @@ Charon validator nodes use a continuous periodic heartbeat:
 
 All nodes run the same ticker-based exchange independently. This results in each node sending to all others every 60 seconds, and each node receiving from all others approximately every 60 seconds.
 
-#### 2. Ad-hoc requests (Relay nodes)
+### 2. Ad-hoc Requests (Relay nodes)
 
 Relay nodes use one-off `DoOnce` requests to gather peer information on-demand:
 
@@ -57,25 +57,19 @@ Relay nodes use one-off `DoOnce` requests to gather peer information on-demand:
 
 4. **No peer list**: Relays do not have a fixed peer list; they query any peer they have an active connection to.
 
-### Message schemas (protobuf-equivalent)
+## Message Schemas
 
-The following structures are used over the wire. The protobufs used by Charon are available [here](https://github.com/ObolNetwork/charon/tree/main/app/promauto/peerinfo).
+The following protobuf definitions are used over the wire:
 
-- PeerInfo
+- [peerinfo.proto](../../proto/peerinfo.proto) - PeerInfo message definitions
 
-  - charon_version: string // Semantic version (e.g., "v1.2.3")
-  - lock_hash: bytes // Cluster lock file hash
-  - git_hash: string // Git commit SHA (7 hexadecimal chars)
-  - sent_at: Timestamp // Message send time
-  - started_at: Timestamp // Node start time
-  - builder_api_enabled: bool // MEV-Boost builder API status
-  - nickname: string // Human-friendly identifier (max 32 chars)
+See the Python reference implementation: [`PeerInfo`](../../src/dv_spec/subspecs/peerinfo/message.py#L9-L48).
 
-### Protocol flow
+## Protocol Flow
 
 The following describes the periodic exchange flow used by Charon validator nodes. For ad-hoc relay usage, see the Interop notes section.
 
-#### 1. Ticker
+### 1. Ticker
 
 Each node independently runs a ticker that fires every 60 seconds:
 
@@ -85,7 +79,7 @@ for now := range ticker.C:
   sendOnce(now)  // send to all peers
 ```
 
-#### 2. Broadcast to all peers
+### 2. Broadcast to All Peers
 
 On each tick, send `PeerInfo` to all peers concurrently:
 
@@ -97,7 +91,7 @@ for each peer in peers:
 
 Each send is a goroutine performing `SendReceive` (request-response) to one peer.
 
-#### 3. Handler
+### 3. Handler
 
 The handler runs on all nodes and responds immediately to any incoming `PeerInfo` request:
 
@@ -107,7 +101,7 @@ The handler runs on all nodes and responds immediately to any incoming `PeerInfo
 
 3. **Send response**: Return own `PeerInfo` via the same stream
 
-#### 4. Response processing
+### 4. Response Processing
 
 Upon receiving a `PeerInfo` response from a peer:
 
@@ -128,9 +122,9 @@ Upon receiving a `PeerInfo` response from a peer:
 
 4. **Update metrics**: Publish all peer metadata and calculated values to Prometheus
 
-### Verification
+## Verification
 
-#### Version compatibility
+### Version Compatibility
 
 Peers check version compatibility using semantic versioning:
 
@@ -148,7 +142,7 @@ Example:
 
 Incompatible peers are logged and tracked in metrics but not disconnected.
 
-#### Lock hash validation
+### Lock Hash Validation
 
 All peers in a cluster must have the same lock hash:
 
@@ -160,7 +154,7 @@ if peer_lock_hash != local_lock_hash:
 
 Lock hash mismatches indicate configuration drift and prevent proper cluster operation.
 
-#### Git hash validation
+### Git Hash Validation
 
 Git hash must be a 7-character hexadecimal string:
 
@@ -171,7 +165,7 @@ if not match(peer_git_hash, "^[0-9a-f]{7}$"):
 
 This enables tracking the exact software version running on each peer.
 
-#### Builder API consistency
+### Builder API Consistency
 
 All peers should have consistent builder API configuration:
 
@@ -182,7 +176,7 @@ if peer_builder_api_enabled != local_builder_api_enabled:
 
 Mismatched builder API settings may lead to different block proposals across the cluster.
 
-### Metrics
+## Metrics
 
 The protocol exposes the following Prometheus metrics:
 
@@ -199,7 +193,7 @@ The protocol exposes the following Prometheus metrics:
 
 Clock offset values are clamped to the range [-3600, 3600] seconds. Extreme values indicate severe time synchronization issues.
 
-### Properties
+## Properties
 
 - **All-to-all exchange**: Every node sends to every other node every 60 seconds
 - **Concurrent sends**: Each node sends to all peers concurrently (one goroutine per peer)
@@ -208,7 +202,7 @@ Clock offset values are clamped to the range [-3600, 3600] seconds. Extreme valu
 - **Idempotent**: Receiving duplicate responses is harmless
 - **No authentication needed**: libp2p peer identity provides authentication
 
-### Interop notes
+## Interop Notes
 
 - **Protocol versioning**: The protocol ID `/charon/peerinfo/2.0.0` identifies the version; future versions may use different IDs
 - **Timestamp encoding**: Timestamps use protobuf Timestamp (seconds + nanoseconds since Unix epoch)
@@ -218,7 +212,7 @@ Clock offset values are clamped to the range [-3600, 3600] seconds. Extreme valu
 - **Metric clamping**: Clock offsets clamped to ±1 hour to prevent unbounded metric values
 - **Log filtering**: Repeated warnings for the same peer are filtered to reduce log noise
 
-#### Relay usage pattern
+### Relay Usage Pattern
 
 Relays use the peerinfo protocol differently from validator nodes:
 

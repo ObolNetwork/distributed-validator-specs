@@ -116,15 +116,15 @@ class Transport:
             msg.signature = self._sign_message(msg)
 
             # Get the actual value for the consensus message if available
-            values = []
+            values = set()
             if value_hash and value_hash in self.values:
-                values.append(self.values[value_hash])
+                values.add(self.values[value_hash])
             if prepared_value_hash and prepared_value_hash in self.values:
-                values.append(self.values[prepared_value_hash])
+                values.add(self.values[prepared_value_hash])
 
             # Create consensus message
             consensus_msg = QBFTConsensusMsg(
-                msg=msg, justification=justification or [], values=values
+                msg=msg, justification=justification or [], values=list(values)
             )
 
             result.append(consensus_msg)
