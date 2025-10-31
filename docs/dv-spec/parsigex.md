@@ -1,4 +1,4 @@
-## Partial Signature Exchange (ParSigEx) interoperability spec
+# Partial Signature Exchange (ParSigEx) interoperability spec
 
 This document describes the Partial Signature Exchange protocol used for exchanging partially signed duty data among distributed validator nodes.
 
@@ -10,40 +10,40 @@ Scope:
 
 Out of scope: cryptographic signature routines, threshold aggregation logic, transport reliability;
 
-### Terms and notation
+## Terms and notation
 
-- n: number of participating nodes in the cluster
-- t: threshold required for signature aggregation (typically ceil(2n/3))
-- Duty: a validator responsibility at a specific slot (e.g., attestation, block proposal)
-- ParSignedData: a partially signed duty data item containing a signature share from one node
-- ParSignedDataSet: a mapping of validator public keys to their ParSignedData
-- Share Index: the 0-based or 1-based index identifying which operator produced a partial signature
+- `n`: number of participating nodes in the cluster
+- `t`: threshold required for signature aggregation (typically `ceil(2n/3)`)
+- `Duty`: a validator's responsibility at a specific slot (e.g., attestation)
+- `ParSignedData`: a partially signed duty data item containing a signature share from one node
+- `ParSignedDataSet`: a mapping of validator public keys to their ParSignedData
+- `ShareIndex`: the 0-based or 1-based index identifying which operator produced a partial signature // Kalo: how is it "0-based or 1-based"? isn't it simply 0-based
 
-### Protocol identifiers (libp2p)
+## Protocol identifiers (libp2p)
 
 All messages are sent under protocol ID:
 
-```
+```text
 /charon/parsigex/2.0.0
 ```
 
-### Exchange pattern
+## Exchange pattern
 
-ParSigEx implements a broadcast-and-subscribe pattern:
+`ParSigEx` implements a broadcast-and-subscribe pattern:
 
-1. **Internal storage trigger**: When a node produces a partial signature (e.g., from the validator API), it stores it in the partial signature database (ParSigDB).
+1. **Internal storage trigger**: When a node produces a partial signature (e.g.: from the validator API), it stores it in the partial signature database (`ParSigDB`). // Kalo: Probably we should add the DB to the Terms and notation
 
-2. **Broadcast phase**: The ParSigDB triggers the ParSigEx component to broadcast the partial signature set to all peers.
+2. **Broadcast phase**: The `ParSigDB` triggers the `ParSigEx` component to broadcast the partial signature set to all peers.
 
-3. **Reception and verification**: Each peer receives the broadcast, verifies the partial signature(s), and stores them in its own ParSigDB.
+3. **Reception and verification**: Each peer receives the broadcast, verifies the partial signature(s), and stores them in its own `ParSigDB`.
 
-4. **Threshold detection**: Once ParSigDB accumulates _threshold_ valid partial signatures for a duty, it triggers the signature aggregation component.
+4. **Threshold detection**: Once `ParSigDB` accumulates _threshold_ valid partial signatures for a duty, it triggers the signature aggregation component.
 
 The exchange ensures that all nodes eventually have access to all partial signatures, enabling any node to aggregate signatures when the threshold is reached.
 
-### Message schemas (protobuf-equivalent)
+## Message schemas (protobuf-equivalent)
 
-The following structures are used over the wire. The protobufs used by Charon are available [here](https://github.com/ObolNetwork/charon/tree/main/core/corepb/v1).
+The following structures are used over the wire. The protobufs used by Charon are available [here](https://github.com/ObolNetwork/charon/tree/main/core/corepb/v1). // Kalo: No Charon references.
 
 - ParSigExMsg
 
@@ -58,9 +58,9 @@ The following structures are used over the wire. The protobufs used by Charon ar
   - signature: bytes // BLS signature share
   - share_idx: int32 // operator index (0-based in protocol)
 
-### Protocol flow
+## Protocol flow
 
-#### 1. Broadcast
+## 1. Broadcast
 
 When a node has a new partial signature to share:
 
@@ -75,7 +75,7 @@ The message contains:
 - The duty being performed (slot + duty type)
 - A set of partial signatures (typically one per validator the node is responsible for)
 
-#### 2. Reception and handling
+## 2. Reception and handling
 
 Upon receiving a `ParSigExMsg`:
 
@@ -98,7 +98,7 @@ Upon receiving a `ParSigExMsg`:
 
 5. **Invoke subscribers**: If all signatures verify, call all registered subscriber callbacks with the duty and partial signature set
 
-### Verification
+## Verification
 
 Partial signature verification follows the Ethereum consensus layer signature specification:
 
@@ -114,7 +114,7 @@ Partial signature verification follows the Ethereum consensus layer signature sp
 
 The verification function is provided at ParSigEx construction time and can be customized (e.g., for testing). In production, `NewEth2Verifier` is used.
 
-### Duty gating
+## Duty gating
 
 Not all duties are exchanged at all times. A gater function filters which duties are accepted:
 
@@ -123,7 +123,7 @@ Not all duties are exchanged at all times. A gater function filters which duties
 
 This prevents nodes from processing or storing irrelevant partial signatures.
 
-### Properties
+## Properties
 
 - **All-to-all exchange**: Every node broadcasts to every other node
 - **Idempotent**: Receiving the same partial signature multiple times is harmless (deduplicated in ParSigDB)
@@ -131,7 +131,7 @@ This prevents nodes from processing or storing irrelevant partial signatures.
 - **Signature verification**: All received partial signatures are verified before acceptance
 - **No equivocation protection**: ParSigEx itself does not prevent a node from sending different signatures for the same duty to different peers
 
-### Interop notes
+## Interop notes
 
 - **Protocol versioning**: The protocol ID `/charon/parsigex/2.0.0` identifies the version; future versions may use different IDs
 - **Peer ordering**: Share indices and peer indices must be consistent across all nodes (typically derived from cluster lock operator order)
