@@ -4,7 +4,7 @@ This document describes the QBFT consensus protocol used for reaching agreement 
 
 Scope:
 
-- Over-the-wire message shapes and fields
+- Over-the-wire message structures and fields
 - Consensus flow and round mechanics
 - Protocol identifiers and exchange patterns
 - Verification and validation flows
@@ -24,7 +24,7 @@ Out of scope: cluster discovery/formation, storage, application-specific value e
 
 All messages are sent under protocol ID:
 
-```
+```text
 /charon/consensus/qbft/2.0.0
 ```
 
@@ -54,7 +54,7 @@ When a round times out or fails, nodes initiate a round change:
 
 **Leader selection:**
 
-```
+```text
 leader_index = (duty.slot + duty.type + round) % n
 ```
 
@@ -62,7 +62,7 @@ leader_index = (duty.slot + duty.type + round) % n
 
 - Each round runs under a timer
 - On timeout, nodes trigger a round change and increment the round
-- Timer/backoff strategy is implementation-defined but must guarantee eventual progress
+- Timer/backoff strategy is implementation-defined but must guarantee eventual progress // Kalo: Probably it's good to devote a paragraph for the timers we have
 
 **Decided messages:**
 
@@ -93,8 +93,8 @@ Extra values MAY be included; order is irrelevant.
 
 **Hashing:**
 
-- Compute a deterministic hash root for values from deterministic protobuf encodings: `HashRoot(deterministic_proto(value))`
-- Message signature is computed over: `HashRoot(deterministic_proto(QBFTMsg without signature))`
+- Compute a deterministic hash root for values from deterministic protobuf encodings: `HashRoot(deterministic_proto(value))` // Kalo: Probably good to say that this is done by the leader upon creating the message and is up to the message type and hashing? Or it's obvious?
+- Message signature is computed over: `HashRoot(deterministic_proto(unsigned QBFTMsg))` // Kalo: shouldn't this be under Signature?
 
 **Signature:**
 
@@ -131,14 +131,14 @@ See Python validation implementation: [`QBFTMsg`](../../src/dv_spec/subspecs/con
 - MUST be sent by the leader of `(duty, round)`
 - MUST set `value_hash` (non-zero)
 - `prepared_round` and `prepared_value_hash` MUST be absent unless entering round via J2
-  - J2 (prepared): MUST set `prepared_round=r*` and `prepared_value_hash=H(V*)` from the justified prepared value
+  - J2 (prepared): MUST set `prepared_round=r*` and `prepared_value_hash=H(V*)` from the justified prepared value // Kalo: What is r* and V* here?
 - `justification`:
   - J1 (null-prepared): MUST include quorum `ROUND_CHANGE` messages
   - J2 (prepared): MUST include quorum `PREPARE` messages for `(r*, V*)`
 
 **`PREPARE`:**
 
-- MUST set `value_hash` (non-zero)
+- MUST set `value_hash` (non-zero) // Kalo: You mean to set a new `value_hash`? Or it's more like "Must have set"
 - MUST NOT set `prepared_round` or `prepared_value_hash`
 - `justification` SHOULD be empty
 
@@ -146,7 +146,7 @@ See Python validation implementation: [`QBFTMsg`](../../src/dv_spec/subspecs/con
 
 - MUST set `value_hash` (non-zero)
 - MUST NOT set `prepared_round` or `prepared_value_hash`
-- `justification` MAY be empty (receivers MUST NOT require justification)
+- `justification` MAY be empty (receivers MUST NOT require justification) // Kalo: What are the ocassions at which it's not empty?
 
 **`ROUND_CHANGE`:**
 
@@ -158,3 +158,5 @@ See Python validation implementation: [`QBFTMsg`](../../src/dv_spec/subspecs/con
 - Optional message type
 - Receivers MUST tolerate presence/absence
 - MUST NOT rely on `DECIDED` for safety or liveness
+
+//Kalo: I think in general we can be more descriptive for each consensus message here

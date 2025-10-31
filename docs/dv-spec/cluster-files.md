@@ -1,15 +1,15 @@
-## Distributed Validator Cluster Files
+# Distributed Validator Cluster Files
 
 This document specifies the file formats used to define and lock distributed validator clusters.
 
-### Overview
+## Overview
 
 Distributed validator clusters use two primary configuration files:
 
 - **cluster-definition.json**: Defines the intended cluster configuration before key generation
 - **cluster-lock.json**: Extends the definition with generated threshold BLS key shares
 
-### cluster-definition.json
+## cluster-definition.json
 
 The cluster definition file defines the intended cluster configuration before keys have been created in a DKG ceremony. It is created by a cluster coordinator or DV Launchpad and serves as an input to the DKG process.
 
@@ -63,7 +63,7 @@ The cluster definition file defines the intended cluster configuration before ke
 - `config_hash`: Hash of the static (non-changing) fields
 - `deposit_amounts`: List of partial deposit amounts in gwei. Each amount must be at least 1 ETH (1000000000 gwei).Individual deposits are limited to 32 ETH for standard validators or 2048 ETH for compounding validators (those using 0x02 withdrawal credentials per EIP-7251).
 
-### cluster-lock.json
+## cluster-lock.json
 
 The cluster lock file extends the cluster definition with distributed validator BLS public key shares. It is generated after the DKG ceremony and serves as the runtime configuration.
 
@@ -117,16 +117,16 @@ The cluster lock file extends the cluster definition with distributed validator 
 - `lock_hash`: Unique identifier for the cluster lock (hash of definition + validators)
 - `node_signatures`: secp256k1 signatures (65-byte R||S||V format) by each operator's ENR private key over the lock_hash
 
-### Additional Persistent Files
+## Additional Persistent Files
 
-**Node Identity Key**
+### Node Identity Key
 
 - Common filename: `charon-enr-private-key`
 - Format: secp256k1 private key (32 bytes)
 - Purpose: Identity key for p2p networking and signing lock/definition operations
 - Storage: Should be kept secret and backed up by each operator
 
-**Validators Key Shares**
+### Validators Key Shares
 
 - Common location: `validator_keys/` directory
 - Format: EIP-2335 keystores (encrypted JSON)
@@ -137,9 +137,9 @@ The cluster lock file extends the cluster definition with distributed validator 
 - Storage: Should be kept secret and backed up by each operator
 - Note: Each operator holds different key shares
 
-### Cluster Lifecycle and File Flow
+## Cluster Lifecycle and File Flow
 
-```
+```text
 DV Launchpad / CLI ─┐
                     ├─► cluster-definition.json ──► DKG Process ─┐
        Creator ─────┘                                            ├─► cluster-lock.json ──► DV Node Runtime
@@ -179,11 +179,11 @@ DV Launchpad / CLI ─┐
    - Nodes use the configuration to coordinate validator duties
    - The lock file ensures all nodes operate with identical cluster parameters
 
-### Hash Computation and Signing
+## Hash Computation and Signing
 
 This section specifies how to compute hashes and signing data for cluster files. **Field ordering during serialization is critical**. The order specified below must be followed exactly.
 
-#### Definition Hash Computation
+### Definition Hash Computation
 
 There are two hashes computed for a cluster definition:
 
@@ -194,7 +194,7 @@ Both hashes use SSZ (Simple Serialize) merkleization.
 
 **Config Hash**:
 
-```
+```ssz
 SSZ Merkleize of:
   Field 0: UUID (ByteList[64])
   Field 1: Name (ByteList[256])
@@ -221,7 +221,7 @@ SSZ Merkleize of:
 
 **Definition Hash**:
 
-```
+```ssz
 SSZ Merkleize of:
   Field 0-10: Same as config hash
   Field 8: Operators (CompositeList[256])
@@ -249,11 +249,11 @@ SSZ Merkleize of:
 - CompositeList: SSZ merkleize each composite element, then merkleize the list with mixin for max length
 - Ordering: Fields must be hashed in exact numerical order shown above
 
-#### Lock Hash Computation
+### Lock Hash Computation
 
 The lock hash uniquely identifies a cluster lock file. It is computed as:
 
-```
+```ssz
 SSZ Merkleize of:
   Field 0: Definition (Composite) - full definition hash as above
   Field 1: Validators (CompositeList[65536])
@@ -276,7 +276,7 @@ SSZ Merkleize of:
         Field 1: Signature (Bytes96)
 ```
 
-#### EIP-712 Signature Computation
+### EIP-712 Signature Computation
 
 The cluster uses EIP-712 typed structured data signatures for creator and operator attestations. This allows users to see what they're signing in wallets like MetaMask.
 
@@ -290,7 +290,7 @@ The cluster uses EIP-712 typed structured data signatures for creator and operat
 }
 ```
 
-##### Creator Config Signature
+#### Creator Config Signature
 
 **Primary Type:** `CreatorConfigHash`
 
@@ -318,7 +318,7 @@ The cluster uses EIP-712 typed structured data signatures for creator and operat
 4. Sign digest with creator's ETH1 private key using secp256k1
 5. Encode signature as 65-byte R||S||V format
 
-##### Operator Config Signature
+#### Operator Config Signature
 
 **Primary Type:** `OperatorConfigHash`
 
@@ -340,7 +340,7 @@ The cluster uses EIP-712 typed structured data signatures for creator and operat
 
 Signature process is identical to creator config signature.
 
-##### Operator ENR Signature
+#### Operator ENR Signature
 
 **Primary Type:** `ENR`
 
@@ -360,45 +360,45 @@ Signature process is identical to creator config signature.
 }
 ```
 
-#### Lock Hash Signatures
+### Lock Hash Signatures
 
 Two types of signatures attest to the lock hash:
 
-##### 1. BLS Aggregate Signature (signature_aggregate)
+#### 1. BLS Aggregate Signature (signature_aggregate)
 
 **Purpose:** Proves that all threshold key shares were correctly generated and operators possess their shares.
 
-**When Created:** During the DKG ceremony, immediately after all validators' threshold key shares have been successfully generated and distributed to operators.
+**Creation time:** During the DKG ceremony, immediately after all validators' threshold key shares have been successfully generated and distributed to operators.
 
 **Process:**
 
-1. Compute lock_hash via SSZ as specified above
-2. Each operator signs lock_hash with all of their BLS secret shares (one share per validator)
+1. Compute `lock_hash` SSZ as specified above
+2. Each operator signs `lock_hash` with all of their BLS secret shares (one share per validator)
 3. All partial signatures are exchanged between operators
 4. All partial signatures are aggregated into a single BLS signature using BLS signature aggregation
-5. Verification: Aggregate public key (from all validator public shares) must verify the aggregate signature over lock_hash
+5. Verification: Aggregate public key (from all validator public shares) must verify the aggregate signature over `lock_hash`
 
-##### 2. Node Signatures (node_signatures)
+#### 2. Node Signatures (node_signatures)
 
 **Purpose:** Attestation by each operator that they participated in DKG and accept the lock.
 
-**When Created:** During the DKG ceremony, immediately AFTER the BLS aggregate signature has been created and verified. This is the final step before the cluster lock file is written to disk. Each operator creates their signature independently using their ENR private key.
+**Creation time:** During the DKG ceremony, immediately AFTER the BLS aggregate signature has been created and verified. This is the final step before the cluster lock file is written to disk. Each operator creates their signature independently using their ENR private key.
 
 **Process:**
 
-1. Compute lock_hash via SSZ
-2. Each operator signs lock_hash with their ENR private key (secp256k1)
+1. Compute `lock_hash` SSZ as specified above
+2. Each operator signs `lock_hash` with their ENR private key (secp256k1)
 3. All operators broadcast and collect each other's signatures
-   - This ensures all operators can produce an identical cluster-lock.json file
+   - This ensures all operators can produce an identical `cluster-lock.json` file
    - The final `node_signatures` array contains one signature per operator
 4. Signature format: 65-byte R||S||V format (same as Ethereum transactions)
 
 **Verification:**
 
-- Recover public key from signature and lock_hash
+- Recover public key from `node_signatures` and `lock_hash`
 - Verify recovered public key matches operator's ENR public key
 
-### Implementation Notes
+## Implementation Notes
 
 **Hash Computation**:
 
@@ -425,7 +425,7 @@ Two types of signatures attest to the lock hash:
 - Encoded as base64 string with `enr:-` prefix
 - Contains the node's secp256k1 public key and network metadata
 - Used for peer discovery and identity verification
-- ENR private key is used to sign node_signatures
+- ENR private key is used to sign `node_signatures`
 
 **SSZ Merkleization Details**:
 
@@ -436,6 +436,6 @@ Two types of signatures attest to the lock hash:
 
 **Backwards Compatibility**:
 
-- Clusters cannot migrate yet from old to new lock format, meaning its up to the implementer to decide if it supports old formats
+- Clusters cannot migrate yet from old to new lock format, meaning it's up to the implementer to decide if it supports old formats
 - Always verify the `version` field before parsing
 - Implementers must support all versions they wish to be compatible with
