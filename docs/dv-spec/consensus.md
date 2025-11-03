@@ -176,7 +176,7 @@ Required fields:
 
 - `prepared_round`:
   - If null-prepared: `0`
-  - If prepared: set to `round*` from the highest prepared round
+  - If prepared: MUST be present with `round*` from the highest prepared round
 - `prepared_value_hash`:
   - If null-prepared: `0`
   - If prepared: MUST be present with `H(value*)` from the highest prepared round
