@@ -4,7 +4,7 @@
 
 The ValidatorAPI component serves as a **reverse proxy** and **middleware layer** between the connected downstream Validator Client (VC) and upstream Beacon Nodes (BNs). It implements the [Ethereum Beacon Node API](https://ethereum.github.io/beacon-APIs/#/) while adding distributed validator logic for signing operations.
 
-**Key Responsibilities:**
+**Key Features:**
 
 1. **Endpoint Interception**: Intercepts validator-specific endpoints to implement distributed validator logic
 2. **Endpoint Proxying**: Forwards beacon chain queries directly to upstream beacon node unchanged
@@ -39,15 +39,6 @@ This mapping is configured during [DKG](pedersen-dkg.md) and stored in the [clus
 - This node's public share for each validator (based on node index)
 - The bidirectional mapping between shares and root keys
 
-## Request Transformations
-
-For each intercepted endpoint, the DV performs specific transformations on requests and responses to enable distributed validation. The primary transformation is **public key mapping**: replacing DV root public keys with public shares (and vice versa).
-
-### Key Mapping Strategy
-
-- **Outbound to VC (Responses)**: DV root public keys → Public shares (for this node's index)
-- **Inbound from VC (Requests)**: Public shares → DV root public keys (for verification and duty lookup)
-
 ## Intercepted Endpoints
 
 ValidatorAPI intercepts and handles the following validator API endpoints to implement distributed validator logic:
@@ -63,7 +54,7 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 - **Incoming request**: No modification to request body (validator indices remain unchanged)
 - **Response transformation**: Replace all DV root public keys with this node's public shares in the duty response
   - For `AttesterDuty`: `duty.PubKey` (root) → `pubshare` (this node's share)
-  - For `ProposerDuty`: `duty.PubKey` (root) → `pubshare` (this node's share, or skip if unknown validator)
+  - For `ProposerDuty`: `duty.PubKey` (root) → `pubshare` (this node's share, or skip if unknown validator since it may return all proposers if validator indices is empty)
   - For `SyncCommitteeDuty`: `duty.PubKey` (root) → `pubshare` (this node's share)
 
 ### Attestation Endpoints
@@ -79,21 +70,21 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 - **Request**: Query parameters unchanged (slot, committee_index)
 - **Response**: No key transformation (attestation data contains no public keys)
-- **Additional processing**: Blocks until consensus completes via `AwaitAttestation()`
+- **Additional processing**: Blocks until nodes agree on attestation data via [consensus](consensus.md)
 
 **`POST /eth/v2/validator/aggregate_attestation`:**
 
 - **Request**: Query parameters unchanged (attestation_data_root, slot, committee_index)
 - **Response**: No key transformation required
-- **Additional processing**: Blocks until aggregate ready via `AwaitAggregateAttestation()`
+- **Additional processing**: Blocks until nodes agree on aggregate attestation data via [consensus](consensus.md)
 
 **`POST /eth/v2/validator/aggregate_and_proofs` (submit):**
 
 - **Request body transformation**:
   1. Extract aggregator public key from `AggregateAndProof.aggregator_index`
-  2. Map public share → DV root public key using `getPubKeyFunc()`
+  2. Map public share → DV root public key 
   3. Verify selection proof signature (inner signature on contribution)
-  4. Verify partial signature on outer `AggregateAndProof` against public share
+  4. Verify partial signature on outer against public share
 - **No response** (204 on success)
 
 ### Block Proposal Endpoints
@@ -120,14 +111,14 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
   3. Verify partial RANDAO signature against public share
   4. Store RANDAO partial signature for aggregation
 - **Response**: No key transformation in block body
-- **Additional processing**: Blocks until block available via `AwaitProposal(slot)`
+- **Additional processing**: Blocks until nodes agree on proposal data via [consensus](consensus.md)
 
 **`POST /eth/v2/beacon/blocks` (submit signed block):**
 
 - **Request body transformation**:
   1. Extract proposer index from block
   2. Retrieve DV root public key from duty definitions
-  3. Fetch unsigned block via `AwaitProposal()` for anti-slashing check
+  3. Fetch unsigned block for anti-slashing check
   4. Verify signed block matches unsigned block (anti-slashing)
   5. Extract VC's partial signature on block
   6. Verify partial signature against this node's public share
@@ -163,7 +154,7 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 - **Request**: Query parameters unchanged (slot, subcommittee_index, beacon_block_root)
 - **Response**: No key transformation in contribution data
-- **Additional processing**: Blocks until contribution ready via `AwaitSyncContribution()`
+- **Additional processing**: Blocks until nodes agree on sync contribution data via [consensus](consensus.md)
 
 **`POST /eth/v1/validator/contribution_and_proofs` (submit aggregated contributions):**
 
@@ -183,8 +174,8 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 - `POST /eth/v1/validator/beacon_committee_selections` - Beacon committee selections
 - `POST /eth/v1/validator/sync_committee_selections` - Sync committee selections
-- `POST /eth/v1/validator/register_validator` - Builder registration (per-validator)
-- `POST /eth/v1/validator/prepare_beacon_proposer` - Fee recipient registration (swallowed, not processed)
+- `POST /eth/v1/validator/register_validator` - Builder registration (returns 200 OK, no processing)
+- `POST /eth/v1/validator/prepare_beacon_proposer` - Fee recipient registration (returns 200 OK, no processing)
 
 **Request Transformation:**
 
@@ -211,28 +202,23 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 **`POST /eth/v1/validator/register_validator`:**
 
-- **Request body transformation**:
-  1. Extract signed validator registration messages
-  2. For each registration:
-     - Extract validator public key (public share)
-     - Map public share → DV root public key
-     - Verify partial signature on registration
-  3. Create `ParSignedData` for each registration
-  4. Exchange and aggregate via ParSigEx → SigAgg
-- **No response** (204 on success)
-- **Additional processing**: Registrations cached in AggSigDB for rebroadcast
-- **Rebroadcast**: Aggregated registrations rebroadcast every epoch
+- **Request**: Accepted but ignored (no processing)
+- **Response**: Returns success (200) without processing
+- **Rationale**: Builder registrations are scheduled and submitted automatically (not via VC requests). The endpoint returns 200 OK to maintain compatibility with VCs, but the submissions are ignored.
+- **Actual submission**: Pre-generated builder registrations from cluster lock are scheduled for submission:
+  - At startup (for all DVs in cluster)
+  - At the first slot of every epoch
 
 **`POST /eth/v1/validator/prepare_beacon_proposer`:**
 
-- **Request**: Completely swallowed/ignored
+- **Request**: Accepted but ignored (no processing)
 - **Response**: Returns success (200) without processing
 - **Rationale**: Fee recipients configured in cluster lock during DKG
 
 **Implementation Details:**
 
 - Selection proofs allow VCs to determine if they should aggregate
-- Builder registrations are pre-generated in cluster lock when possible
+- Builder registrations are pre-generated in cluster lock and scheduled for automatic submission
 - Fee recipient preparation is a no-op to prevent VC misconfiguration
 
 ### Metadata Endpoints
@@ -542,24 +528,25 @@ All other beacon API endpoints are **reverse-proxied** directly to the upstream 
 
 **Endpoint:** `POST /eth/v1/validator/register_validator`
 
-Builder registrations are handled specially:
+Builder registrations are handled automatically rather than through VC requests:
 
-1. VC submits signed validator registration with partial signature
-2. ValidatorAPI verifies partial signature
-3. Stores in ParSigDB, exchanges via [ParSigEx](parsigex.md), aggregates via SigAgg
-4. **Rebroadcaster** component rebroadcasts registrations every epoch
-5. Registrations cached in AggSigDB for rebroadcast
-6. Pre-generated registrations from cluster lock used if available
+1. **VC Request Handling**: When VC submits a registration request, ValidatorAPI returns `200 OK` without processing
+2. **Actual Submission**: Pre-generated builder registrations are scheduled for submission:
+   - **At startup**: Registrations for all DVs in the cluster (from `cluster-lock.json`)
+   - **Every epoch**: Resubmissions at the first slot of each epoch
+3. **No Consensus**: Registrations bypass the consensus workflow entirely (no `DutyBuilderRegistration` duty)
+4. **Pre-generated**: Registrations are created during DKG and stored in the cluster lock file
 
 ### Fee Recipient Preparation
 
 **Endpoint:** `POST /eth/v1/validator/prepare_beacon_proposer`
 
-This endpoint is **swallowed** (returns success but does nothing):
+This endpoint returns `200 OK` without processing:
 
-- Fee recipients configured in cluster lock file during [DKG](pedersen-dkg.md)
-- VCs don't need to specify fee recipients
+- Fee recipients are configured in the cluster lock file during [DKG](pedersen-dkg.md)
+- VCs don't need to specify fee recipients dynamically
 - Prevents VC misconfiguration from affecting distributed validator
+- Maintains compatibility with VCs that expect this endpoint to succeed
 
 ### Committee Selections
 
@@ -573,7 +560,7 @@ These return selection proofs:
 1. VC requests selections for potential aggregator duties
 2. ValidatorAPI queries duty definitions to check eligibility
 3. For each validator, creates selection proof:
-   - DutyPrepareAggregator or DutyPrepareSyncContribution
+   - `DutyPrepareAggregator` or `DutyPrepareSyncContribution`
    - Goes through partial signing, exchange, aggregation
    - Returns aggregated selection proof to VC
 4. VC uses selection proof when submitting aggregated duties
@@ -585,7 +572,6 @@ ValidatorAPI supports two content types for most endpoints:
 ### JSON (application/json)
 
 - Default for most requests/responses
-- Human-readable, easier debugging
 - Standard Ethereum Beacon API format
 
 ### SSZ (application/octet-stream)
@@ -611,17 +597,3 @@ ValidatorAPI supports two content types for most endpoints:
 
 - Proxied endpoints return beacon node errors unchanged
 - Intercepted endpoints may wrap beacon node errors with additional context
-
-## Architecture Integration
-
-ValidatorAPI acts as the **entry point** for all validator client interactions. It integrates with:
-
-- **DutyDB**: Stores and retrieves unsigned data agreed upon by consensus
-- **ParSigDB**: Stores partial signatures before threshold reached
-- **[ParSigEx](parsigex.md)**: Exchanges partial signatures between peers
-- **SigAgg**: Aggregates partial signatures into full threshold signatures
-- **AggSigDB**: Caches aggregated signatures for reuse (RANDAO, builder registrations)
-- **Broadcaster**: Submits aggregated signed data to beacon node
-- **[Consensus](consensus.md)**: Agrees on unsigned data before VCs receive it
-
-**Key Insight**: From the VC's perspective, it's interacting with a normal beacon node. ValidatorAPI intercepts critical signing operations to implement the distributed validator protocol while proxying everything else to maintain full beacon chain functionality.
