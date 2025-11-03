@@ -15,8 +15,6 @@ The cluster definition file defines the intended cluster configuration before ke
 
 **Schema:**
 
-// Kalo: Let's use values that are actually deserialisable. I couldn't find a "placeholder" value for ENR that matches the serialiser, probably something to look into.
-
 ```json
 {
   "name": "DV cluster", // Optional cosmetic identifier
@@ -122,7 +120,7 @@ The cluster lock file extends the cluster definition with distributed validator 
 ### Node Identity Key
 
 - Common filename: `charon-enr-private-key`
-- Format: secp256k1 private key (32 bytes)
+- Format: hex-encoded string of serialized secp256k1 private key (64 bytes)
 - Purpose: Identity key for p2p networking and signing lock/definition operations
 - Storage: Should be kept secret and backed up by each operator
 
