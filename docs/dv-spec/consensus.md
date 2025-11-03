@@ -50,7 +50,9 @@ When a round times out or fails, nodes initiate a round change:
 **Justification types:**
 
 - **J1 (null-prepared)**: Quorum of `ROUND_CHANGE` with no prepared value (fresh start)
-- **J2 (prepared)**: Quorum of `ROUND_CHANGE` where some have prepared `(r*, V*)` in a prior round. The leader MUST propose `V*` with `prepared_round=r*`
+- **J2 (prepared)**: Quorum of `ROUND_CHANGE` where some have prepared `(round*, value*)` in a prior round. The leader MUST propose `value*` with `prepared_round=round*`
+
+Note: `round*` and `value*` denote the highest prepared round number and its corresponding value from the justification (i.e., values from a previous round, not the current round).
 
 **Leader selection:**
 
@@ -141,14 +143,14 @@ Sent by the leader of `(duty, round)` only upon startup or round change to every
 
 Required fields:
 
-- `value_hash`: MUST be set (32-byte non-zero hash of proposed value)
+- `value_hash`: MUST be present (32-byte non-zero hash of proposed value)
 - `prepared_round` and `prepared_value_hash`:
   - For J1 (null-prepared): MUST be `0` and zero hash (32 zero bytes)
-  - For J2 (prepared): MUST be set to `r*` and `H(V*)` respectively
+  - For J2 (prepared): MUST be present with `prepared_round=round*` and `prepared_value_hash=H(value*)` from the highest prepared round in the justification
 - `justification`:
   - Round 1: MUST be empty
   - J1 (null-prepared): MUST include quorum `ROUND_CHANGE` messages with null prepared values
-  - J2 (prepared): MUST include quorum `ROUND_CHANGE` messages AND quorum `PREPARE(r*, V*)` messages
+  - J2 (prepared): MUST include quorum `ROUND_CHANGE` messages AND quorum `PREPARE(round*, value*)` messages from the highest prepared round
 
 **`PREPARE`:**
 
@@ -156,7 +158,7 @@ Sent by any node upon receiving justified `PRE_PREPARE` to every other node.
 
 Required fields:
 
-- `value_hash`: MUST be set (32-byte non-zero hash matching the `PRE_PREPARE` value)
+- `value_hash`: MUST be present (32-byte non-zero hash matching the `PRE_PREPARE` value)
 
 **`COMMIT`:**
 
@@ -164,7 +166,7 @@ Sent by any node upon receiving quorum `PREPARE` messages to every other node.
 
 Required fields:
 
-- `value_hash`: MUST be set (32-byte non-zero hash of the prepared value)
+- `value_hash`: MUST be present (32-byte non-zero hash of the prepared value)
 
 **`ROUND_CHANGE`:**
 
@@ -174,13 +176,13 @@ Required fields:
 
 - `prepared_round`:
   - If null-prepared: `0`
-  - If prepared: `r*`
+  - If prepared: set to `round*` from the highest prepared round
 - `prepared_value_hash`:
   - If null-prepared: `0`
-  - If prepared: `H(V*)` if prepared value `V*`
+  - If prepared: MUST be present with `H(value*)` from the highest prepared round
 - `justification`:
   - If null-prepared: MUST be empty
-  - If prepared: MUST include quorum `PREPARE(r*, V*)` messages that justify the prepared round and value
+  - If prepared: MUST include quorum `PREPARE(round*, value*)` messages that justify the prepared round and value
 
 **`DECIDED`:**
 
@@ -189,5 +191,5 @@ Optional message type for optimization, implementations MUST NOT rely on `DECIDE
 
 Required fields:
 
-- `value_hash`: MUST be set (32-byte non-zero hash of decided value)
-- `justification`: MUST include quorum `COMMIT(r, V)` messages that achieved consensus
+- `value_hash`: MUST be present (32-byte non-zero hash of decided value)
+- `justification`: MUST include quorum `COMMIT(round, value)` messages that achieved consensus
