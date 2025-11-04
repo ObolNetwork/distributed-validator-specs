@@ -93,8 +93,14 @@ def validate_messages(msgs: list[PriorityMsg], min_required: int = 1) -> tuple[b
 
     Example:
         >>> from dv_spec.types.duty import Duty, DutyType
-        >>> msg1 = PriorityMsg(duty=Duty(slot=1, type=DutyType.ATTESTER), peer_id="peer1", topics=[])
-        >>> msg2 = PriorityMsg(duty=Duty(slot=1, type=DutyType.ATTESTER), peer_id="peer2", topics=[])
+        >>> msg1 = PriorityMsg(
+                duty=Duty(slot=1, type=DutyType.ATTESTER),
+                peer_id="peer1", topics=[]
+            )
+        >>> msg2 = PriorityMsg(
+                duty=Duty(slot=1, type=DutyType.ATTESTER),
+                peer_id="peer2", topics=[]
+            )
         >>> validate_messages([msg1, msg2])
         (True, '')
     """
@@ -168,12 +174,12 @@ def calculate_result(msgs: list[PriorityMsg], min_required: int) -> PriorityResu
         >>> msg1 = PriorityMsg(
         ...     duty=Duty(slot=1, type=DutyType.ATTESTER),
         ...     peer_id="peer1",
-        ...     topics=[PriorityTopicProposal(topic="protocol", priorities=["A", "B"])]
+        ...     topics=[PriorityTopicProposal(topic="protocol", priorities=["A", "B"])],
         ... )
         >>> msg2 = PriorityMsg(
         ...     duty=Duty(slot=1, type=DutyType.ATTESTER),
         ...     peer_id="peer2",
-        ...     topics=[PriorityTopicProposal(topic="protocol", priorities=["A", "C"])]
+        ...     topics=[PriorityTopicProposal(topic="protocol", priorities=["A", "C"])],
         ... )
         >>> result = calculate_result([msg1, msg2], min_required=2)
         >>> result.topics[0].priorities[0].priority  # "A" should be first
@@ -196,7 +202,7 @@ def calculate_result(msgs: list[PriorityMsg], min_required: int) -> PriorityResu
 
     # Calculate results for each topic
     topic_results: list[PriorityTopicResult] = []
-    for topic_hash, proposals in proposals_by_topic.items():
+    for proposals in proposals_by_topic.values():
         # Get the actual topic value from the first proposal
         topic_value = proposals[0].topic
 
@@ -236,9 +242,7 @@ def calculate_result(msgs: list[PriorityMsg], min_required: int) -> PriorityResu
             for value, score, _ in scored_priorities
         ]
 
-        topic_results.append(
-            PriorityTopicResult(topic=topic_value, priorities=result_priorities)
-        )
+        topic_results.append(PriorityTopicResult(topic=topic_value, priorities=result_priorities))
 
     # Sort topics by hash for deterministic output
     topic_results.sort(key=lambda t: str(_hash_value(t.topic)))
