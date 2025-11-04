@@ -107,8 +107,10 @@ class Transport:
                 peer_idx=peer_idx,
                 round=round_num,
                 value_hash=value_hash if msg_type != MsgType.ROUND_CHANGE else None,
-                prepared_round=prepared_round,
-                prepared_value_hash=prepared_value_hash,
+                prepared_round=prepared_round if prepared_round is not None else 0,
+                prepared_value_hash=(
+                    prepared_value_hash if prepared_value_hash is not None else b"\x00" * 32
+                ),
                 signature=None,  # Will be set after signing
             )
 
@@ -163,8 +165,10 @@ class Transport:
                 duty=duty,
                 peer_idx=peer_idx,
                 round=round_num,
-                prepared_round=prepared_round,
-                prepared_value_hash=prepared_value_hash,
+                prepared_round=prepared_round if prepared_round is not None else 0,
+                prepared_value_hash=(
+                    prepared_value_hash if prepared_value_hash is not None else b"\x00" * 32
+                ),
                 value_hash=None,  # ROUND_CHANGE messages don't have value_hash
                 signature=None,  # Will be set after signing
             )

@@ -23,7 +23,7 @@ The cluster definition file defines the intended cluster configuration before ke
     "address": "0x0000000000000000000000001234567890abcdef", // ETH1 address of the creator
     "config_signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001234567890abcdef" // EIP712 Signature of config_hash
   },
-  "version": "v1.8.0", // Schema version
+  "version": "v1.10.0", // Schema version
   "num_validators": 1, // Number of distributed validators to create
   "threshold": 3, // Threshold required for signature reconstruction
   "dkg_algorithm": "default", // DKG algorithm for key generation
@@ -47,7 +47,10 @@ The cluster definition file defines the intended cluster configuration before ke
   ],
   "deposit_amounts": [
     "32000000000" // Partial deposit amounts in gwei
-  ]
+  ],
+  "consensus_protocol": "qbft",
+  "target_gas_limit": 36000000,
+  "compounding": true
 }
 ```
 
@@ -59,7 +62,10 @@ The cluster definition file defines the intended cluster configuration before ke
 - `fork_version`: Network identifier (e.g., mainnet: `0x00000000`, hoodi: `0x10000910`, sepolia: `0x90000069`)
 - `definition_hash`: Merkle root used to confirm no ambiguity between definitions
 - `config_hash`: Hash of the static (non-changing) fields
-- `deposit_amounts`: List of partial deposit amounts in gwei. Each amount must be at least 1 ETH (1000000000 gwei).Individual deposits are limited to 32 ETH for standard validators or 2048 ETH for compounding validators (those using 0x02 withdrawal credentials per EIP-7251).
+- `deposit_amounts`: List of partial deposit amounts in gwei. Each amount must be at least 1 ETH (1000000000 gwei). Individual deposits are limited to 32 ETH for standard validators or 2048 ETH for compounding validators (those using 0x02 withdrawal credentials per EIP-7251). Charon enforces these limits and validates compounding flag.
+- `consensus_protocol`: Consensus protocol name (e.g., "qbft").
+- `target_gas_limit`: Target block gas limit for the cluster.
+- `compounding`: Boolean flag for compounding rewards (0x02 withdrawal credentials).
 
 ## cluster-lock.json
 

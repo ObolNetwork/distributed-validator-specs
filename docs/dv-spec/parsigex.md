@@ -98,12 +98,15 @@ The verification function is provided at ParSigEx construction time and can be c
 
 ## Duty gating
 
-Not all duties are exchanged at all times. A gater function filters which duties are accepted:
+Not all duties are exchanged at all times. A gater function filters which duties are accepted based on timing:
 
-- **Always accepted**: DutyExit, DutyBuilderRegistration (lifecycle operations)
-- **Conditionally accepted**: Other duty types are accepted only if corresponding work has been scheduled (e.g., DutyRandao is only expected if DutyProposer was scheduled for the same slot)
+- **Future epoch limit**: Duties are only accepted if they fall within the current epoch or the next 2 epochs (total 3-epoch window)
+- **Invalid duty types**: Duties with invalid duty types are rejected
+- **No past duty rejection**: The gater does not reject duties from past epochs (that is handled separately by the Deadliner)
 
-This prevents nodes from processing or storing irrelevant partial signatures.
+This prevents nodes from processing or storing irrelevant partial signatures from the distant future, which could cause memory exhaustion or processing of duties from peers with incorrect clocks.
+
+Note: `DutyExit` and `DutyBuilderRegistration` never expire (handled in Deadliner), but they are still subject to the same future epoch gating as other duty types.
 
 ## Properties
 

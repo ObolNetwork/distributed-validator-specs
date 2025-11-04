@@ -85,8 +85,8 @@ class TestTransport:
             peer_idx=0,
             round=1,
             value_hash=b"test_hash" + b"\x00" * 23,  # 32 bytes total
-            prepared_round=None,
-            prepared_value_hash=None,
+            prepared_round=0,
+            prepared_value_hash=b"\x00" * 32,
             signature=None,
         )
         signature = transport._sign_message(msg)
@@ -109,8 +109,8 @@ class TestTransport:
             peer_idx=0,
             round=1,
             value_hash=b"test_hash" + b"\x00" * 23,  # 32 bytes total
-            prepared_round=None,
-            prepared_value_hash=None,
+            prepared_round=0,
+            prepared_value_hash=b"\x00" * 32,
             signature=b"existing_signature" + b"\x00" * 47,  # 65 bytes total
         )
 
@@ -178,8 +178,8 @@ class TestTransport:
                 peer_idx=1,
                 round=2,
                 value_hash=None,
-                prepared_round=None,
-                prepared_value_hash=None,
+                prepared_round=0,
+                prepared_value_hash=b"\x00" * 32,
                 signature=b"rc_sig" + b"\x00" * 59,  # 65 bytes total
             )
         ]

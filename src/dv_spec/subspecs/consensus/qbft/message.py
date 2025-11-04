@@ -30,16 +30,19 @@ class QBFTMsg(BaseModel):
     duty: Duty = Field(description="The duty associated with the message.")
     peer_idx: int = Field(description="The index of the peer sending the message.")
     round: int = Field(description="The round number for the message.")
-    prepared_round: Optional[int] = Field(
-        default=None,
-        description="The prepared round number. None indicates no preparation has occurred.",
+    prepared_round: int = Field(
+        default=0,
+        description="The prepared round number. 0 indicates no preparation has occurred.",
     )
     signature: Optional[bytes] = Field(default=None, description="The signature of the message.")
     value_hash: Optional[bytes] = Field(
         default=None, description="The hash of the value being proposed."
     )
-    prepared_value_hash: Optional[bytes] = Field(
-        default=None, description="The hash of the prepared value."
+    prepared_value_hash: bytes = Field(
+        default=b"\x00" * 32,
+        description=(
+            "The hash of the prepared value. Zero hash (32 zero bytes) indicates no prepared value."
+        ),
     )
 
     @field_validator("peer_idx")
@@ -60,21 +63,17 @@ class QBFTMsg(BaseModel):
 
     @field_validator("prepared_round")
     @classmethod
-    def validate_prepared_round(cls, v: Optional[int], info: ValidationInfo) -> Optional[int]:
+    def validate_prepared_round(cls, v: int, info: ValidationInfo) -> int:
         """
         Validate prepared_round constraints.
 
         Rules:
-        1. If not None, prepared_round must be >= 1
-        2. If not None, prepared_round must be <= current round
-        3. None indicates no previous value prepared
+        1. prepared_round must be >= 0
+        2. prepared_round must be <= current round
+        3. 0 indicates no previous value prepared
         """
-        # None is always valid
-        if v is None:
-            return v
-
-        if v < 1:
-            raise ValueError("prepared_round must be >= 1 when not None")
+        if v < 0:
+            raise ValueError("prepared_round must be >= 0")
 
         if info.data and "round" in info.data:
             current_round = info.data["round"]
@@ -101,22 +100,28 @@ class QBFTMsg(BaseModel):
 
     @field_validator("prepared_value_hash")
     @classmethod
-    def validate_prepared_value_hash(
-        cls, v: Optional[bytes], info: ValidationInfo
-    ) -> Optional[bytes]:
+    def validate_prepared_value_hash(cls, v: bytes, info: ValidationInfo) -> bytes:
         """
         Validate prepared_value_hash constraints.
 
         Rules:
-        1. If not None, prepared_value_hash must be 32 bytes
-        2. None indicates no previous value prepared
+        1. prepared_value_hash must be 32 bytes
+        2. Zero hash (32 zero bytes) indicates no previous value prepared
+        3. prepared_value_hash must be zero hash if prepared_round is 0
+        4. prepared_value_hash must be non-zero if prepared_round > 0
         """
-        if v is not None and len(v) != 32:
+        if len(v) != 32:
             raise ValueError("prepared_value_hash must be 32 bytes")
-        if v is None and info.data and "prepared_round" in info.data:
+
+        is_zero_hash = v == b"\x00" * 32
+
+        if info.data and "prepared_round" in info.data:
             prepared_round = info.data["prepared_round"]
-            if prepared_round is not None:
-                raise ValueError("prepared_value_hash cannot be None when prepared_round is set")
+            if prepared_round == 0 and not is_zero_hash:
+                raise ValueError("prepared_value_hash must be zero hash when prepared_round is 0")
+            if prepared_round > 0 and is_zero_hash:
+                raise ValueError("prepared_value_hash must be non-zero when prepared_round > 0")
+
         return v
 
 

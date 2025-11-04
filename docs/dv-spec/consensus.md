@@ -118,13 +118,11 @@ See Python validation implementation: [`QBFTMsg`](../../src/dv_spec/subspecs/con
 - `signature` is 65 bytes when present (R||S||V format) (see [`validate_signature`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L85-L90))
 - Signature recovery matches the public key for `peer_idx`
 - `round` >= 1 (see [`validate_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L58-L63))
-- `prepared_round` >= 1 when present; `None` indicates no preparation (see [`validate_prepared_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L65-L83))
-- `prepared_round` <= `round` when present (see [`validate_prepared_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L65-L83))
-- `value_hash` is 32 bytes when present (see [`validate_value_hash`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L92-L97))
-- `prepared_value_hash` is 32 bytes when present (see [`validate_prepared_value_hash`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L99-L111))
-- `prepared_value_hash` cannot be `None` if `prepared_round` is set (see [`validate_prepared_value_hash`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L99-L111))
-- `justification` is a flat list (nested justifications are rejected)
-- Each object in `justification` has identical duty to `msg.duty`
+- `prepared_round` >= 0; `0` indicates no preparation (null-prepared) (see [`validate_prepared_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L65-L83))
+- `prepared_round` <= `round` (see [`validate_prepared_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L65-L83))
+- `value_hash` is 32 bytes when non-zero (see [`validate_value_hash`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L92-L97))
+- `prepared_value_hash` must be zero hash if `prepared_round` is 0; must be non-zero hash if `prepared_round` > 0 (see [`validate_prepared_value_hash`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L99-L111))
+- `justification` is a flat list (nested justifications are rejected) with each object in `justification` having identical duty to `msg.duty`
 - For each referenced non-zero hash in `msg` or `justifications`, a matching value exists in `values` and re-hashes to that hash
 
 ### Field Requirements by Message Type
@@ -145,8 +143,8 @@ Required fields:
 
 - `value_hash`: MUST be present (32-byte non-zero hash of proposed value)
 - `prepared_round` and `prepared_value_hash`:
-  - For J1 (null-prepared): MUST be `0` and zero hash (32 zero bytes)
-  - For J2 (prepared): MUST be present with `prepared_round=round*` and `prepared_value_hash=H(value*)` from the highest prepared round in the justification
+  - For J1 (null-prepared): MUST be `0` and zero hash (32 zero bytes) respectively
+  - For J2 (prepared): MUST be present with `prepared_round=round*` (where `round* > 0`) and `prepared_value_hash=H(value*)` (non-zero hash) from the highest prepared round in the justification
 - `justification`:
   - Round 1: MUST be empty
   - J1 (null-prepared): MUST include quorum `ROUND_CHANGE` messages with null prepared values
@@ -176,10 +174,10 @@ Required fields:
 
 - `prepared_round`:
   - If null-prepared: `0`
-  - If prepared: MUST be present with `round*` from the highest prepared round
+  - If prepared: MUST be `> 0` with `round*` from the highest prepared round
 - `prepared_value_hash`:
-  - If null-prepared: `0`
-  - If prepared: MUST be present with `H(value*)` from the highest prepared round
+  - If null-prepared: zero hash (32 zero bytes)
+  - If prepared: MUST be non-zero hash `H(value*)` from the highest prepared round
 - `justification`:
   - If null-prepared: MUST be empty
   - If prepared: MUST include quorum `PREPARE(round*, value*)` messages that justify the prepared round and value

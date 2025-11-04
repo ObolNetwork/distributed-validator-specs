@@ -19,20 +19,20 @@ class TestQBFTMsg:
             duty=duty,
             peer_idx=0,
             round=1,
-            prepared_round=None,
+            prepared_round=0,
             signature=b"s" * 65,  # 65 bytes
             value_hash=b"a" * 32,  # 32 bytes
-            prepared_value_hash=None,
+            prepared_value_hash=b"\x00" * 32,
         )
 
         assert msg.type == MsgType.PRE_PREPARE
         assert msg.duty == duty
         assert msg.peer_idx == 0
         assert msg.round == 1
-        assert msg.prepared_round is None
+        assert msg.prepared_round == 0
         assert msg.signature is not None and len(msg.signature) == 65
         assert msg.value_hash is not None and len(msg.value_hash) == 32
-        assert msg.prepared_value_hash is None
+        assert msg.prepared_value_hash == b"\x00" * 32
 
     def test_prepare_message_creation(self) -> None:
         """Test creating a PREPARE message."""
@@ -42,10 +42,10 @@ class TestQBFTMsg:
             duty=duty,
             peer_idx=1,
             round=1,
-            prepared_round=None,
+            prepared_round=0,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=None,
+            prepared_value_hash=b"\x00" * 32,
         )
 
     def test_commit_message_creation(self) -> None:
@@ -99,10 +99,10 @@ class TestQBFTMsg:
             duty=duty,
             peer_idx=1,
             round=1,
-            prepared_round=None,
+            prepared_round=0,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=None,
+            prepared_value_hash=b"\x00" * 32,
         )
 
         msg2 = QBFTMsg(
@@ -110,10 +110,10 @@ class TestQBFTMsg:
             duty=duty,
             peer_idx=1,
             round=1,
-            prepared_round=None,
+            prepared_round=0,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=None,
+            prepared_value_hash=b"\x00" * 32,
         )
 
         msg3 = QBFTMsg(
@@ -121,10 +121,10 @@ class TestQBFTMsg:
             duty=duty,
             peer_idx=2,  # Different peer
             round=1,
-            prepared_round=None,
+            prepared_round=0,
             signature=b"s" * 65,
             value_hash=b"a" * 32,
-            prepared_value_hash=None,
+            prepared_value_hash=b"\x00" * 32,
         )
 
         assert msg1 == msg2
