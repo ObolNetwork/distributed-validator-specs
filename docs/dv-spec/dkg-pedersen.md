@@ -8,7 +8,9 @@ Scope:
 - Protocol identifiers, sequencing, and nonce derivation
 - Output artifacts
 
-Out of scope: cryptographic routines, Kyber DKG internals, transport reliability;
+Out of scope: cryptographic routines, Kyber DKG internals, transport reliability
+
+**Note**: This document describes the cryptographic DKG protocol only. See [DKG Sync Protocol](dkg-sync.md) for ceremony management.
 
 ## Terms and Notation
 
@@ -262,4 +264,4 @@ Outputs
 
 Constraints and validations
 
-- When removing more than F operators, at least t participants are required. Operators listed for removal must exist in the current lock; “participating operators” (if specified) must also be valid current operators. An operator being removed cannot participate unless explicitly included in the participating set.
+- When removing more than F operators, at least t participants are required. Operators listed for removal must exist in the current lock; "participating operators" (if specified) must also be valid current operators. An operator being removed cannot participate unless explicitly included in the participating set.
