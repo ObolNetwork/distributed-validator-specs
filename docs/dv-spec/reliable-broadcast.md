@@ -9,7 +9,7 @@ Scope:
 - Equivocation prevention mechanisms
 - Hashing and canonical ordering requirements
 
-Out of scope: application-specific message types, peer discovery, transport reliability, secp256k1 cryptographic primitives;
+Out of scope: application-specific message types, peer discovery, transport reliability, secp256k1 cryptographic primitives.
 
 ## Terms and Notation
 
@@ -47,7 +47,8 @@ The reliable broadcast protocol operates in two phases:
 
 ### Phase 1: Signature Collection
 
-- Requester sends `BCastSigRequest(message_id, message)` to all peers
+- Requester sends `BCastSigRequest(message_id, message)` to all other peers (excluding itself)
+- Requester computes its own signature locally over the same hash
 - Each peer computes `Hash = SHA256(type_url || value)` and checks its `EquivocationGuardKey = (requester_peer_id, message_id)`:
   - If no prior entry exists: stores `Hash` and returns signature over `Hash`
   - If prior entry exists with same `Hash`: returns signature again (idempotent)
@@ -55,7 +56,7 @@ The reliable broadcast protocol operates in two phases:
 
 ### Phase 2: Broadcast
 
-- After collecting signatures from all peers, requester sends `BCastMessage(message_id, message, signatures)` to all peers
+- After collecting signatures from all peers (including its own), requester sends `BCastMessage(message_id, message, signatures)` to all other peers (excluding itself)
 - Receivers verify:
   - The signatures list length and ordering matches the canonical peer order
   - Each signature validates over `Hash` for the corresponding peer
@@ -66,7 +67,7 @@ The reliable broadcast protocol operates in two phases:
 
 **Equivocation prevention:**
 
-Each peer enforces at-most-one-hash per `(requester_peer_id, message_id)`. The server maintains a deduplication map and rejects any second signing request with a different hash under the same key.
+Each peer enforces at-most-one-hash per `(requester_peer_id, message_id)`. Each peer maintains a deduplication map and rejects any second signing request with a different hash under the same key.
 
 **Signature verification:**
 
@@ -79,7 +80,7 @@ The signatures array must match the agreed-upon peer ordering (typically from th
 ## Properties
 
 - Anti-equivocation: A requester cannot convince different peers to accept different payloads under the same message_id; peers sign only one hash per (requester,message_id).
-- Group attestation: Receivers accept only payloads that carry N valid signatures (or the configured quorum) corresponding to the known peer set.
+- Group attestation: Receivers accept only payloads that carry all N valid signatures corresponding to the known peer set.
 - Idempotence: Replaying the same Hash yields the same signatures; duplicates are harmless.
 
 ## Interop Notes
@@ -87,5 +88,5 @@ The signatures array must match the agreed-upon peer ordering (typically from th
 - **Hashing consistency** is critical: use exactly SHA256(type_url || value) bytes.
 - The **type_url** should uniquely identify the embedded message schema (e.g., a Protobuf URL or stable string).
 - **Canonical order** must be shared across peers (e.g., lock/operator order) to align signature ordering.
-- **Timeouts**: Server uses 1-minute receive timeout; client uses 62-second send timeout (allows server to timeout first).
+- **Timeouts**: Receiving peer uses 1-minute receive timeout; broadcasting peer uses 62-second send timeout (allows receiver to timeout first).
 - **Deduplication**: Per (requester_peer_id, message_id) pair - prevents equivocation but allows the same requester to use different message_ids.

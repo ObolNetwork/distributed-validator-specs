@@ -60,7 +60,7 @@ The cluster definition file defines the intended cluster configuration before ke
 - `num_validators`: Specifies how many distributed validators will be created
 - `threshold`: Minimum number of nodes required for signature reconstruction (typically ⌈2n/3⌉)
 - `fork_version`: Network identifier (e.g., mainnet: `0x00000000`, hoodi: `0x10000910`, sepolia: `0x90000069`)
-- `definition_hash`: Merkle root used to confirm no ambiguity between definitions
+- `definition_hash`: SSZ hash used to confirm no ambiguity between definitions
 - `config_hash`: Hash of the static (non-changing) fields
 - `deposit_amounts`: List of partial deposit amounts in gwei. Each amount must be at least 1 ETH (1000000000 gwei). Individual deposits are limited to 32 ETH for standard validators or 2048 ETH for compounding validators (those using 0x02 withdrawal credentials per EIP-7251). Charon enforces these limits and validates compounding flag.
 - `consensus_protocol`: Consensus protocol name (e.g., "qbft").
@@ -114,7 +114,7 @@ The cluster lock file extends the cluster definition with distributed validator 
 **Key Fields:**
 
 - `distributed_validators`: Array containing public data for each DV
-- `public_shares`: BLS public key shares per operator, ordered canonically by operator index (1-based indexing in the map)
+- `public_shares`: BLS public key shares per operator, ordered by operator index (array indexed 0-based, where index 0 corresponds to operator 1)
 - `partial_deposit_data`: Pre-signed deposit data for each partial deposit from `deposit_amounts` (supports split deposits) for the validator
 - `builder_registration`: Pre-signed builder registration for the validator
 - `signature_aggregate`: BLS aggregate signature proving all key shares exist
@@ -227,17 +227,27 @@ SSZ Merkleize of:
 
 ```ssz
 SSZ Merkleize of:
-  Field 0-10: Same as config hash
+  Field 0: UUID (ByteList[64])
+  Field 1: Name (ByteList[256])
+  Field 2: Version (ByteList[16])
+  Field 3: Timestamp (ByteList[32])
+  Field 4: NumValidators (uint64)
+  Field 5: Threshold (uint64)
+  Field 6: DKGAlgorithm (ByteList[32])
+  Field 7: ForkVersion (Bytes4)
   Field 8: Operators (CompositeList[256])
     For each operator:
-      Field 0: Address (Bytes20)
+      Field 0: Address (Bytes20) - parsed from 0x-prefixed hex string
       Field 1: ENR (ByteList[1024]) - encoded as UTF-8 bytes of ENR string
       Field 2: ConfigSignature (Bytes65)
       Field 3: ENRSignature (Bytes65)
   Field 9: Creator (Composite)
-    Field 0: Address (Bytes20)
+    Field 0: Address (Bytes20) - parsed from 0x-prefixed hex string
     Field 1: ConfigSignature (Bytes65)
-  Field 10: ValidatorAddresses - same as config hash
+  Field 10: ValidatorAddresses (CompositeList[65536])
+    For each validator address:
+      Field 0: FeeRecipientAddress (Bytes20) - parsed from 0x-prefixed hex
+      Field 1: WithdrawalAddress (Bytes20) - parsed from 0x-prefixed hex
   Field 11: DepositAmounts (uint64[256])
   Field 12: ConsensusProtocol (ByteList[256])
   Field 13: TargetGasLimit (uint64)
