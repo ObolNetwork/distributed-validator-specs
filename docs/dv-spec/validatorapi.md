@@ -286,6 +286,7 @@ All other beacon API endpoints are **reverse-proxied** directly to the upstream 
 - Event streams (`/eth/v1/events`)
 - All other standard beacon node API endpoints
 
+// Kalo: I'm not sure if those workflows bring anything for this markdown precisely. I find them good if they have the full picture, but here we are trying to isolate ourselves to the validatorAPI. So most of the time we are either repeating what we've said in the above section or going out of context.
 ## Duty Workflows
 
 ### Attestation Duty Flow
@@ -526,6 +527,7 @@ All other beacon API endpoints are **reverse-proxied** directly to the upstream 
    └─────────────────────────────────────────────────────────┘
 ```
 
+// Kalo: Aren't we repeating those? I think the only ones that deserves extra attention are the two selection endpoints. Mainly because they are purely DV related. We can give more reasoning why they exist, rather than (or alongside with) the flow.
 ## Special Endpoints
 
 ### Builder Registration
@@ -571,6 +573,7 @@ These return selection proofs:
 
 ## Content Type Support
 
+// Kalo: Probably enough to just say "We match Beacon API spec for both inbound and outbound requests"?
 ValidatorAPI supports two content types for most endpoints:
 
 ### JSON (application/json)
@@ -588,9 +591,11 @@ ValidatorAPI supports two content types for most endpoints:
 
 ### Verification Failures
 
+// Kalo: Is it always 400 and 500? Or we shall say 4XX and 5XX?
 - **HTTP 400:** Invalid partial signature, bad request format
 - **HTTP 500:** Internal errors (consensus failure, beacon node unreachable)
 
+// Kalo: How can a VC distinguish what is a timeout error?
 ### Timeout Errors
 
 - Unsigned data not available within timeout
