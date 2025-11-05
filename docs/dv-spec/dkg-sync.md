@@ -111,7 +111,7 @@ Each barrier synchronization ensures no node proceeds until all nodes complete t
 
 The sync protocol uses the following protocol ID for stream multiplexing:
 
-```
+```text
 /charon/dkg/sync/1.0.0/
 ```
 
@@ -159,6 +159,7 @@ Each node runs both a **server** and multiple **clients**:
 - **Server**: Accepts connections from N-1 other nodes, tracks their connection status and current step
 - **Clients**: One client per remote peer (N-1 total), maintains persistent connection to that peer's server
 
+// Kalo: I feel we are repeating too much in this "Connection Lifecycle" with what we already have in "Ceremony Sequencing". Probably leave just one of them, amended with the missing info that the other has.
 ### Connection Lifecycle
 
 1. **Initial Handshake**
@@ -264,7 +265,7 @@ Servers enforce the following rules:
 
 1. **First Step**: Must be 0 or 1 (depending on implementation)
 2. **Monotonicity**: Steps must not decrease (step_new ≥ step_old)
-3. **Maximum Jump**: Steps should not skip more than 2 (prevents protocol divergence)
+3. **Maximum Jump**: Steps should not skip more than 2 (prevents protocol divergence) // Kalo: When is jumping 2 steps allowed?
 4. **All Peers Progress**: Server only unblocks barrier when all N-1 clients at same step
 
 ## Graceful Shutdown
