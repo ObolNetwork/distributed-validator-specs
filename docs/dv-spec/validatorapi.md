@@ -6,22 +6,22 @@ The ValidatorAPI component serves as a **reverse proxy** and **middleware layer*
 
 **Key Features:**
 
-1. **Endpoint Interception**: Intercepts validator-specific endpoints to implement distributed validator logic
-2. **Endpoint Proxying**: Forwards beacon chain queries directly to upstream beacon node unchanged
-3. **Key Translation**: Maps between DV root public keys and share public keys bidirectionally
-4. **Signature Verification**: Verifies partial signatures from VCs before accepting into signing workflow
-5. **Consensus Coordination**: Blocks unsigned data requests until [consensus](consensus.md) completes
+1. **Endpoint Interception**: Intercepts validator-specific endpoints to implement distributed validator logic.
+2. **Endpoint Proxying**: Forwards beacon chain queries directly to upstream beacon node unchanged.
+3. **Key Translation**: Maps between DV root public keys and share public keys bidirectionally.
+4. **Signature Verification**: Verifies partial signatures from VCs before accepting into signing workflow.
+5. **Consensus Coordination**: Blocks unsigned data requests until [consensus](consensus.md) completes.
 
 ## Public Key Mapping
 
 A critical aspect of the middleware is the bidirectional mapping between public keys. A DV instance typically manages **multiple distributed validators**, each with its own set of keys:
 
 - **DV Root Public Keys**: Each distributed validator has its own aggregate BLS public key (one per validator managed by the cluster)
-- **Public Shares**: For each distributed validator, each node has a threshold BLS public key share (N shares per validator, where N = number of nodes in cluster)
+- **Public Shares**: For each distributed validator, each node has a threshold BLS public key share (N shares per validator, where N = number of nodes in a cluster)
 
 ### Example: 3-node cluster with 2 validators
 
-```
+```text
 Validator 1 (DV Root Key: 0xabc...):
   - Node 1 share: 0x111...
   - Node 2 share: 0x222...
@@ -60,9 +60,9 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 ### Attestation Endpoints
 
 - `GET /eth/v1/validator/attestation_data` - Unsigned attestation data
-- `POST /eth/v2/validator/aggregate_attestation` - Aggregate attestation
-- `POST /eth/v1/validator/aggregate_and_proofs` - Submit aggregated attestations (deprecated v1)
+- `POST /eth/v2/validator/aggregate_attestation` - Unsigned aggregate attestation
 - `POST /eth/v2/validator/aggregate_and_proofs` - Submit aggregated attestations
+// Kalo: What about submit attestations?
 
 **Request Transformation:**
 
@@ -74,33 +74,32 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 **`POST /eth/v2/validator/aggregate_attestation`:**
 
+// Kalo: Might be good to specify where/how the data from the selections endpoint is used. Given that it's DV specific probably it's good to be a bit more explicit about it (not as straightforward for most folks).
 - **Request**: Query parameters unchanged (attestation_data_root, slot, committee_index)
 - **Response**: No key transformation required
 - **Additional processing**: Blocks until nodes agree on aggregate attestation data via [consensus](consensus.md)
 
-**`POST /eth/v2/validator/aggregate_and_proofs` (submit):**
+**`POST /eth/v2/validator/aggregate_and_proofs`:**
 
+// Kalo: Not really transformations, no? Most of it is more of a verifications? Probably worth to say we are changing not only the public share to the root PK but also the signature once threshold is aggregated. Might be worth to split into 2 bullet points: `Request body transformation` and `Request verifications`.
 - **Request body transformation**:
   1. Extract aggregator public key from `AggregateAndProof.aggregator_index`
-  2. Map public share → DV root public key 
+  2. Map public share → DV root public key
   3. Verify selection proof signature (inner signature on contribution)
   4. Verify partial signature on outer against public share
 - **No response** (204 on success)
 
 ### Block Proposal Endpoints
 
-- `GET /eth/v1/validator/blinded_blocks/{slot}` - Unsigned blinded block (deprecated)
-- `GET /eth/v2/validator/blinded_blocks/{slot}` - Unsigned blinded block (deprecated)
-- `GET /eth/v3/validator/blocks/{slot}` - Unsigned block (current)
-- `POST /eth/v1/beacon/blocks` - Submit signed block
+- `GET /eth/v3/validator/blocks/{slot}` - Unsigned block
 - `POST /eth/v2/beacon/blocks` - Submit signed block
-- `POST /eth/v1/beacon/blinded_blocks` - Submit signed blinded block
 - `POST /eth/v2/beacon/blinded_blocks` - Submit signed blinded block
 
 **Request Transformation:**
 
-**`GET /eth/v3/validator/blocks/{slot}` (request unsigned block):**
+**`GET /eth/v3/validator/blocks/{slot}`:**
 
+// Kalo: I don't understand what's the idea behind this one? We are saying what we are receiving from the VC? Why then `graffiti` says Unchanged? Or we are saying what we are sending to the BN? Why then `randao_reveal` says "Public share signature"?
 - **Request query parameters**:
   - `randao_reveal`: Public share signature from VC (partial RANDAO)
   - `graffiti`: Unchanged
@@ -113,7 +112,7 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 - **Response**: No key transformation in block body
 - **Additional processing**: Blocks until nodes agree on proposal data via [consensus](consensus.md)
 
-**`POST /eth/v2/beacon/blocks` (submit signed block):**
+**`POST /eth/v2/beacon/blocks` and `POST /eth/v2/beacon/blinded_blocks`:**
 
 - **Request body transformation**:
   1. Extract proposer index from block
@@ -124,13 +123,9 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
   6. Verify partial signature against this node's public share
 - **No response** (204 on success)
 
-**`POST /eth/v2/beacon/blinded_blocks` (submit signed blinded block):**
-
-- Same transformation as regular blocks above
-
 **Implementation Details:**
 
-- RANDAO reveal is processed separately before block request
+- RANDAO reveal is processed separately at the time of receiving `GET /eth/v3/validator/blocks/{slot}` from the VC but before `GET /eth/v3/validator/blocks/{slot}` is sent to the BN
 - Block matching prevents VCs from signing different block data
 
 ### Sync Committee Endpoints
@@ -138,10 +133,11 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 - `GET /eth/v1/validator/sync_committee_contribution` - Unsigned sync committee contribution
 - `POST /eth/v1/validator/contribution_and_proofs` - Submit sync committee contributions
 - `POST /eth/v1/validator/sync_committee_messages` - Submit sync committee messages
+// Kalo: What about unsigned sync committee messages?
 
 **Request Transformation:**
 
-**`POST /eth/v1/validator/sync_committee_messages` (submit sync messages):**
+**`POST /eth/v1/validator/sync_committee_messages`:**
 
 - **Request body transformation**:
   1. Extract validator index from each sync committee message
@@ -152,11 +148,12 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 **`GET /eth/v1/validator/sync_committee_contribution`:**
 
+// Kalo: Might be good to specify where/how the data from the selections endpoint is used. Given that it's DV specific probably it's good to be a bit more explicit about it (not as straightforward for most folks).
 - **Request**: Query parameters unchanged (slot, subcommittee_index, beacon_block_root)
 - **Response**: No key transformation in contribution data
 - **Additional processing**: Blocks until nodes agree on sync contribution data via [consensus](consensus.md)
 
-**`POST /eth/v1/validator/contribution_and_proofs` (submit aggregated contributions):**
+**`POST /eth/v1/validator/contribution_and_proofs`:**
 
 - **Request body transformation**:
   1. Extract aggregator public key from contribution
@@ -174,8 +171,8 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 - `POST /eth/v1/validator/beacon_committee_selections` - Beacon committee selections
 - `POST /eth/v1/validator/sync_committee_selections` - Sync committee selections
-- `POST /eth/v1/validator/register_validator` - Builder registration (returns 200 OK, no processing)
-- `POST /eth/v1/validator/prepare_beacon_proposer` - Fee recipient registration (returns 200 OK, no processing)
+- `POST /eth/v1/validator/register_validator` - Builder registration
+- `POST /eth/v1/validator/prepare_beacon_proposer` - Fee recipient registration
 
 **Request Transformation:**
 
@@ -186,7 +183,7 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
   1. For each selection, map public share → DV root public key
   2. Query duty definitions to verify eligibility
   3. Create `DutyPrepareAggregator` for each selection
-  4. Sign selection proof with partial signature
+  4. Sign selection proof with partial signature // Kalo: It's already signed by the VC, no? We do not touch the partial keys in the runtime. That's what the selection proof is. Or you mean the k1 signature we do for auth between the nodes?
   5. Exchange and aggregate selection proofs
 - **Response transformation**: Return aggregated selection proofs to VC
 
@@ -195,8 +192,8 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 - **Request body**: List of sync selections with public shares
 - **Processing**:
   1. For each selection, map public share → DV root public key
-  2. Create `DutyPrepareSyncContribution` for selection
-  3. Sign selection proof with partial signature
+  2. Create `DutyPrepareSyncContribution` for selection // Kalo: Don't we do the "Query duty definitions to verify eligibility" here as well? I'm not sure.
+  3. Sign selection proof with partial signature // Kalo: It's already signed by the VC, no? We do not touch the partial keys in the runtime. That's what the selection proof is. Or you mean the k1 signature we do for auth between the nodes?
   4. Exchange and aggregate selection proofs
 - **Response transformation**: Return aggregated selection proofs to VC
 
@@ -214,6 +211,7 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 - **Request**: Accepted but ignored (no processing)
 - **Response**: Returns success (200) without processing
 - **Rationale**: Fee recipients configured in cluster lock during DKG
+// Kalo: And when is the actual submission? The eth2client function is `SubmitProposalPreparations` if that helps to track it down.
 
 **Implementation Details:**
 
@@ -223,7 +221,7 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 ### Metadata Endpoints
 
-- `GET /eth/v1/node/version` - Node version (returns DV version)
+- `GET /eth/v1/node/version` - Node version
 - `GET /eth/v1/beacon/states/{state_id}/validators` - Get validators
 - `GET /eth/v1/beacon/states/{state_id}/validators/{validator_id}` - Get validator
 
@@ -237,6 +235,7 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 **`GET /eth/v1/beacon/states/{state_id}/validators`:**
 
+// Kalo: Again the purpose of this "Request parameters" is a bit unclear to me. Is it simply going over the parameters as seen in the Beacon API? If so, no much need to do so I think
 - **Request parameters**:
   - Can specify validator IDs as public keys (public shares) or indices
   - Query parameters: `id` array with pubkeys or indices
@@ -244,11 +243,11 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 - **Request transformation**:
   1. If IDs are public shares (0x-prefixed), map each share → DV root public key
   2. Query beacon node with DV root public keys
-  3. Supports caching - checks validator cache before querying BN
+  3. Supports caching - as this request is quite heavy, DVs can support caching
 - **Response transformation**:
   1. For each validator in response, check if it's a cluster validator
-  2. If cluster validator: `validator.PublicKey` (root) → `pubshare` (this node's share)
-  3. If not cluster validator: leave unchanged (ignoreNotFound=true for "all validators" queries)
+  2. If cluster validator: `validator.PublicKey` (root) → `pubshare` (this node's share) // Kalo: probably good to not divert from the rhetoric so far of "public share" and "dv root public key"?
+  3. If not cluster validator: leave unchanged
 - **Returns**: Modified validator set with public shares for cluster validators
 
 **`GET /eth/v1/beacon/states/{state_id}/validators/{validator_id}`:**
@@ -267,6 +266,11 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 ### Deprecated Endpoints (Return 404)
 
 - `GET /eth/v1/validator/aggregate_attestation` - Use v2
+- `POST /eth/v1/validator/aggregate_and_proofs` - Use v2
+- `GET /eth/v1/validator/blinded_blocks/{slot}` - Use v3
+- `GET /eth/v2/validator/blinded_blocks/{slot}` - Use v3
+- `POST /eth/v1/beacon/blocks` - Use v2
+- `POST /eth/v1/beacon/blinded_blocks` - Use v2
 - `GET /teku_proposer_config` - Teku-specific
 - `GET /proposer_config` - Teku-specific
 
