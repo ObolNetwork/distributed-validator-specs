@@ -5,7 +5,7 @@ This document describes how distributed validators schedule and execute beacon c
 Scope:
 
 - Slot and epoch time calculations
-- Duty resolution from beacon node APIs
+- Duty resolution from Bbeacon node
 - Deadline computation and duty gating logic
 - Epoch-based caching and memory management
 - Slot offset scheduling for different duty types
@@ -14,20 +14,21 @@ Out of scope: Beacon node API implementation, consensus protocol details, signat
 
 ## Terms and Notation
 
-- `Slot`: 12-second window during which a block may be proposed
-- `Epoch`: collection of 32 slots (384 seconds)
+- `Slot`: 12-second window during which a block may be proposed // Kalo: not necessarily 12 seconds, it's configurable for the chain
+- `Epoch`: collection of 32 slots (384 seconds) // Kalo: not necessarily 32 slots, it's configurable for the chain
 - `Duty`: assigned validator task (attestation, proposal, sync committee message, etc.)
-- `Deadline`: timestamp after which duty rewards are severely diminished
+- `Deadline`: timestamp after which duty rewards are severely diminished // Kalo: do you imply attestations here? IMO that's not a deadline. A deadline is a timestamp after which no more inputs for a certain action are accepted.
 - `Duty Gating`: validation logic that rejects invalid or expired duties
-- `Slot Offset`: fractional delay within a slot before triggering a duty type
+- `Slot Offset`: fractional delay within a slot before triggering a duty type (i.e.: 1/3 slot time for attestations)
 
 ## Time Structure
 
+// Kalo: again, those are configurable per chain. We can leave all those timings, but mention it's ethereum mainnet specific. DVs should not be bound by those timeframes (and Charon isn't bound by them, given that we had a working Charon on Gnosis, which has 6 sec slots).
 The beacon chain divides time into slots and epochs:
 
-**Slot Duration**: 12 seconds (fixed)  
-**Slots per Epoch**: 32 (fixed)  
-**Epoch Duration**: 384 seconds (6.4 minutes)  
+**Slot Duration**: 12 seconds (fixed)
+**Slots per Epoch**: 32 (fixed)
+**Epoch Duration**: 384 seconds (6.4 minutes)
 **Genesis Time**: Network-specific start time
 
 **Current Slot Calculation**:
@@ -47,12 +48,13 @@ DVs track slots in real-time to trigger duties at precise moments:
 3. Emit slot tick events every 12 seconds
 4. Handle clock skew and missed slots gracefully
 
-**Skipped Slot Handling**: If the system pauses (garbage collection, suspend), multiple slots may pass. The scheduler should jump to the actual current slot rather than processing a backlog of stale duties.
+**Skipped Slot Handling**: If the system pauses (garbage collection, suspend), multiple slots may pass. The scheduler should jump to the actual current slot rather than processing a backlog of stale duties. // Kalo: probably not straight forward to the reader what "scheduler" is? Probably if we ommit it and just say "DV" or similar?
 
 ## Duty Resolution
 
 At the start of each epoch, query the beacon node for all duties assigned to active validators in that epoch.
 
+// Kalo: All those are not something... out of ordinary? Why do we need to copy how a traditional validator fetches duties
 ### Beacon Node Queries
 
 **Attester Duties**:
@@ -91,6 +93,7 @@ Response per validator:
 
 Only query duties for validators with `status == "active_ongoing"`. Skip validators in pending, exiting, exited, or slashed states.
 
+// Kalo: I don't think we should include optimisations in the spec.
 ### Epoch-Based Caching
 
 Minimize beacon node queries by caching duties per epoch:
@@ -154,7 +157,8 @@ Each duty type has a deadline after which rewards are severely diminished or zer
 
 Deadlines are computed from slot start time with a safety margin for network propagation:
 
-```
+// Kalo: Again, the "# ~1 second" is for Etheruem
+```text
 margin = slot_duration / 12  # ~1 second
 deadline = slot_start_time + duty_duration + margin
 ```
@@ -202,7 +206,7 @@ This ensures validators don't attest or propose based on stale fork choice.
 
 For validators using MEV-boost, builder registrations must be submitted at the start of each epoch:
 
-1. Get pre-signed builder registration for each active validator
+1. Get pre-signed builder registration for each active validator, found in the cluster lock
 2. Submit registrations to beacon node via `/eth/v1/validator/prepare_beacon_proposer`
 3. Handle independently of duty scheduling (typically once per epoch)
 

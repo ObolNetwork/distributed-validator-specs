@@ -41,10 +41,12 @@ Priority implements a two-phase request-response pattern:
    - The node's peer ID
    - A cryptographic signature
 
+// Kalo: Who is the initiating node? All nodes make such initiation, right?
 2. **Broadcast phase**: The initiating node sends its `PriorityMsg` to all other peers using libp2p `SendReceive`.
 
 3. **Handler response**: Each peer that receives a `PriorityMsg` request immediately responds with its own `PriorityMsg` for the same duty.
 
+// Kalo: How can duplicates occur in normal circumstances?
 4. **Collection**: The initiating node collects responses from peers, deduplicating by peer ID (only the first message from each peer is kept).
 
 5. **Exchange completion**: The exchange phase completes when either:
@@ -53,6 +55,7 @@ Priority implements a two-phase request-response pattern:
 
 ### Phase 2: Consensus
 
+// Kalo: No need to go into details as function name, especially if we are not referencing this function down the line.
 1. **Result calculation**: Once the exchange phase completes, each node deterministically calculates cluster-wide priorities using the `calculateResult` function.
 
 2. **Consensus proposal**: Each node proposes its calculated `PriorityResult` to the consensus protocol (typically QBFT).
