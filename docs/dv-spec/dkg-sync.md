@@ -130,9 +130,10 @@ The sync protocol coordinates the DKG ceremony through the following sequence:
 1. **Connection Establishment**
 
    - Each node runs both a server and N-1 clients (one per remote peer)
-   - Clients open persistent streams to all peer servers
+   - Clients open persistent streams to all peer servers using protocol ID `/charon/dkg/sync/1.0.0/`
    - Initial `MsgSync` contains definition hash signature for verification
-   - Servers verify signatures and version compatibility
+   - Servers verify signatures and version compatibility (DKG compatibility requires matching minor version)
+   - Server responds with `MsgSyncResponse` (empty error = success, non-empty error = failure)
    - Wait until all N-1 peers successfully connect
 
 2. **Step Synchronization Loop**
@@ -140,14 +141,16 @@ The sync protocol coordinates the DKG ceremony through the following sequence:
    - For each ceremony phase (cryptographic DKG, validator setup, lock creation, etc.):
      - All nodes perform the phase operations locally
      - Each node increments its step counter
-     - Clients send `MsgSync` with updated step to their servers
-     - Servers track all client steps
+     - Clients send `MsgSync` with updated step to their servers (approximately once per second)
+     - Servers track all client steps and echo timestamp for RTT measurement
      - Servers only allow progression when all clients reach the same step (barrier)
-   - Clients poll periodically (~1s) until barrier condition met
+     - Ceremony code blocks until `await_all_at_step(N)` returns
+   - Steps must progress monotonically (0 → 1 → 2 → ...); servers reject step decreases
 
 3. **Graceful Shutdown**
    - After final phase completes, all clients set `shutdown=true` in `MsgSync`
    - Servers wait for shutdown messages from all N-1 clients
+   - Server marks each client as shutdown and only completes when all are shutdown
    - Coordinated termination ensures no node left hanging
 
 ## Architecture Details
@@ -158,33 +161,6 @@ Each node runs both a **server** and multiple **clients**:
 
 - **Server**: Accepts connections from N-1 other nodes, tracks their connection status and current step
 - **Clients**: One client per remote peer (N-1 total), maintains persistent connection to that peer's server
-
-// Kalo: I feel we are repeating too much in this "Connection Lifecycle" with what we already have in "Ceremony Sequencing". Probably leave just one of them, amended with the missing info that the other has.
-### Connection Lifecycle
-
-1. **Initial Handshake**
-
-   - Client opens stream to server's protocol ID
-   - First `MsgSync` includes definition hash signature
-   - Server verifies signature and version compatibility
-   - Server responds with `MsgSyncResponse` (empty error = success)
-
-2. **Periodic Sync**
-
-   - Client sends `MsgSync` approximately once per second
-   - Server echoes timestamp for RTT measurement
-   - Server tracks client's current step number
-
-3. **Barrier Synchronization**
-
-   - Server collects step numbers from all N-1 clients
-   - Only when all clients report same step does barrier lift
-   - Ceremony code blocks until `await_all_at_step(N)` returns
-
-4. **Shutdown**
-   - After final phase, client sets `shutdown=true`
-   - Server marks client as shutdown
-   - Server waits for all N-1 clients to shutdown before completing
 
 ### Verification and Validation
 
@@ -263,10 +239,10 @@ The barrier lifts when all N-1 connected peers report the same step number.
 
 Servers enforce the following rules:
 
-1. **First Step**: Must be 0 or 1 (depending on implementation)
+1. **First Step**: Must be 0 or 1 (to handle initialization race conditions)
 2. **Monotonicity**: Steps must not decrease (step_new ≥ step_old)
-3. **Maximum Jump**: Steps should not skip more than 2 (prevents protocol divergence) // Kalo: When is jumping 2 steps allowed?
-4. **All Peers Progress**: Server only unblocks barrier when all N-1 clients at same step
+3. **Maximum Jump**: Steps should not skip more than 2
+4. **All Peers Progress**: Server only unblocks barrier when all N-1 clients report step N or N+1
 
 ## Graceful Shutdown
 

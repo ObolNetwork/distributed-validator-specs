@@ -14,22 +14,23 @@ Out of scope: Beacon node API implementation, consensus protocol details, signat
 
 ## Terms and Notation
 
-- `Slot`: 12-second window during which a block may be proposed // Kalo: not necessarily 12 seconds, it's configurable for the chain
-- `Epoch`: collection of 32 slots (384 seconds) // Kalo: not necessarily 32 slots, it's configurable for the chain
+- `Slot`: time window during which a block may be proposed 
+- `Epoch`: collection of slots
 - `Duty`: assigned validator task (attestation, proposal, sync committee message, etc.)
-- `Deadline`: timestamp after which duty rewards are severely diminished // Kalo: do you imply attestations here? IMO that's not a deadline. A deadline is a timestamp after which no more inputs for a certain action are accepted.
+- `Deadline`: timestamp after which the DV stops accepting inputs for a duty
 - `Duty Gating`: validation logic that rejects invalid or expired duties
 - `Slot Offset`: fractional delay within a slot before triggering a duty type (i.e.: 1/3 slot time for attestations)
 
 ## Time Structure
 
-// Kalo: again, those are configurable per chain. We can leave all those timings, but mention it's ethereum mainnet specific. DVs should not be bound by those timeframes (and Charon isn't bound by them, given that we had a working Charon on Gnosis, which has 6 sec slots).
-The beacon chain divides time into slots and epochs:
+The beacon chain divides time into slots and epochs. These values are configurable per network and queried from the beacon node:
 
-**Slot Duration**: 12 seconds (fixed)
-**Slots per Epoch**: 32 (fixed)
-**Epoch Duration**: 384 seconds (6.4 minutes)
-**Genesis Time**: Network-specific start time
+**Ethereum Mainnet:**
+- **Slot Duration**: 12 seconds
+- **Slots per Epoch**: 32
+- **Epoch Duration**: 384 seconds (6.4 minutes)
+
+**Genesis Time**: Network-specific start time queried from the beacon node
 
 **Current Slot Calculation**:
 
@@ -45,71 +46,15 @@ DVs track slots in real-time to trigger duties at precise moments:
 
 1. Fetch genesis time and slot configuration from beacon node at startup
 2. Compute current slot from wall clock
-3. Emit slot tick events every 12 seconds
+3. Emit slot tick events at each slot boundary (interval equals slot duration)
 4. Handle clock skew and missed slots gracefully
 
-**Skipped Slot Handling**: If the system pauses (garbage collection, suspend), multiple slots may pass. The scheduler should jump to the actual current slot rather than processing a backlog of stale duties. // Kalo: probably not straight forward to the reader what "scheduler" is? Probably if we ommit it and just say "DV" or similar?
+**Skipped Slot Handling**: If the system pauses (garbage collection, suspend), multiple slots may pass. The DV should jump to the actual current slot rather than processing a backlog of stale duties.
 
 ## Duty Resolution
 
-At the start of each epoch, query the beacon node for all duties assigned to active validators in that epoch.
-
-// Kalo: All those are not something... out of ordinary? Why do we need to copy how a traditional validator fetches duties
-### Beacon Node Queries
-
-**Attester Duties**:
-
-```
-POST /eth/v1/validator/duties/attester/{epoch}
-Body: [validator_index_1, validator_index_2, ...]
-
-Response per validator:
-- pubkey, validator_index
-- committee_index (0-63)
-- committee_length, validator_committee_index
-- slot (assigned slot for attestation)
-```
-
-**Proposer Duties**:
-
-```
-GET /eth/v1/validator/duties/proposer/{epoch}
-
-Response per validator:
-- pubkey, validator_index
-- slot (assigned slot for block proposal)
-```
-
-**Sync Committee Duties**:
-
-```
-POST /eth/v1/validator/duties/sync/{epoch}
-Body: [validator_index_1, validator_index_2, ...]
-
-Response per validator:
-- pubkey, validator_index
-- validator_sync_committee_indices (positions in committee)
-```
-
-Only query duties for validators with `status == "active_ongoing"`. Skip validators in pending, exiting, exited, or slashed states.
-
-// Kalo: I don't think we should include optimisations in the spec.
-### Epoch-Based Caching
-
-Minimize beacon node queries by caching duties per epoch:
-
-**Cache Structure**:
-
-- Map from `(slot, duty_type)` to `{pubkey -> duty_definition}`
-- Map from `epoch` to list of `(slot, duty_type)` keys for trimming
-- Track last resolved epoch
-
-**Resolution Timing**:
-
-- First slot of epoch: resolve duties for current epoch if not already resolved
-- Last slot of epoch: pre-resolve duties for next epoch (reduces latency)
-
-**Memory Management**: After resolving epoch E, trim epoch `E-3` and earlier. Keeping the last 3 epochs allows attestation inclusion delay checks while preventing unbounded memory growth.
+At the start of each epoch, the DV queries the beacon node for all duties assigned to its active validators, using the standard Beacon API endpoints.
+However, some duties are derived from these responses.
 
 ### Derived Duties
 
@@ -157,11 +102,12 @@ Each duty type has a deadline after which rewards are severely diminished or zer
 
 Deadlines are computed from slot start time with a safety margin for network propagation:
 
-// Kalo: Again, the "# ~1 second" is for Etheruem
 ```text
-margin = slot_duration / 12  # ~1 second
+margin = slot_duration / 12  # Scales with slot duration
 deadline = slot_start_time + duty_duration + margin
 ```
+
+**Ethereum Mainnet Examples (12s slots):**
 
 | Duty Type               | Duration | Total Deadline | Notes                               |
 | ----------------------- | -------- | -------------- | ----------------------------------- |
