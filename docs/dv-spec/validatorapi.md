@@ -6,22 +6,22 @@ The ValidatorAPI component serves as a **reverse proxy** and **middleware layer*
 
 **Key Features:**
 
-1. **Endpoint Interception**: Intercepts validator-specific endpoints to implement distributed validator logic
-2. **Endpoint Proxying**: Forwards beacon chain queries directly to upstream beacon node unchanged
-3. **Key Translation**: Maps between DV root public keys and share public keys bidirectionally
-4. **Signature Verification**: Verifies partial signatures from VCs before accepting into signing workflow
-5. **Consensus Coordination**: Blocks unsigned data requests until [consensus](consensus.md) completes
+1. **Endpoint Interception**: Intercepts validator-specific endpoints to implement distributed validator logic.
+2. **Endpoint Proxying**: Forwards beacon chain queries directly to upstream beacon node unchanged.
+3. **Key Translation**: Maps between DV root public keys and share public keys bidirectionally.
+4. **Signature Verification**: Verifies partial signatures from VCs before accepting into signing workflow.
+5. **Consensus Coordination**: Blocks unsigned data requests until [consensus](consensus.md) completes.
 
 ## Public Key Mapping
 
 A critical aspect of the middleware is the bidirectional mapping between public keys. A DV instance typically manages **multiple distributed validators**, each with its own set of keys:
 
 - **DV Root Public Keys**: Each distributed validator has its own aggregate BLS public key (one per validator managed by the cluster)
-- **Public Shares**: For each distributed validator, each node has a threshold BLS public key share (N shares per validator, where N = number of nodes in cluster)
+- **Public Shares**: For each distributed validator, each node has a threshold BLS public key share (N shares per validator, where N = number of nodes in a cluster)
 
 ### Example: 3-node cluster with 2 validators
 
-```
+```text
 Validator 1 (DV Root Key: 0xabc...):
   - Node 1 share: 0x111...
   - Node 2 share: 0x222...
@@ -60,8 +60,8 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 ### Attestation Endpoints
 
 - `GET /eth/v1/validator/attestation_data` - Unsigned attestation data
-- `POST /eth/v2/validator/aggregate_attestation` - Aggregate attestation
-- `POST /eth/v1/validator/aggregate_and_proofs` - Submit aggregated attestations (deprecated v1)
+- `POST /eth/v2/beacon/pool/attestations` - Submit attestations
+- `POST /eth/v2/validator/aggregate_attestation` - Unsigned aggregate attestation
 - `POST /eth/v2/validator/aggregate_and_proofs` - Submit aggregated attestations
 
 **Request Transformation:**
@@ -77,43 +77,53 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 - **Request**: Query parameters unchanged (attestation_data_root, slot, committee_index)
 - **Response**: No key transformation required
 - **Additional processing**: Blocks until nodes agree on aggregate attestation data via [consensus](consensus.md)
+- **Prerequisites**: VCs only call this endpoint after determining aggregator selection:
+  1. VC creates partial selection proofs (BLS signatures on slot with public share)
+  2. VC calls `beacon_committee_selections` with these partial proofs
+  3. DVs exchange partial proofs between nodes and aggregate them
+  4. DV return aggregated selection proofs (threshold signatures with DV root key)
+  5. VC evaluates `is_aggregator(committee_length, aggregated_selection_proof)`
+  6. Only if selected, VC calls this endpoint to fetch the aggregate attestation
 
-**`POST /eth/v2/validator/aggregate_and_proofs` (submit):**
+**`POST /eth/v2/validator/aggregate_and_proofs`:**
 
 - **Request body transformation**:
   1. Extract aggregator public key from `AggregateAndProof.aggregator_index`
-  2. Map public share → DV root public key 
-  3. Verify selection proof signature (inner signature on contribution)
-  4. Verify partial signature on outer against public share
+  2. Map public share → DV root public key (transforms key in message)
+  3. Exchange partial signatures between nodes and aggregate → threshold signature with DV root key (transforms signature)
+- **Request verifications**:
+  1. Verify selection proof signature (inner signature on contribution)
+  2. Verify partial signature on outer `SignedAggregateAndProof` against public share
 - **No response** (204 on success)
 
 ### Block Proposal Endpoints
 
-- `GET /eth/v1/validator/blinded_blocks/{slot}` - Unsigned blinded block (deprecated)
-- `GET /eth/v2/validator/blinded_blocks/{slot}` - Unsigned blinded block (deprecated)
-- `GET /eth/v3/validator/blocks/{slot}` - Unsigned block (current)
-- `POST /eth/v1/beacon/blocks` - Submit signed block
+- `GET /eth/v3/validator/blocks/{slot}` - Unsigned block
 - `POST /eth/v2/beacon/blocks` - Submit signed block
-- `POST /eth/v1/beacon/blinded_blocks` - Submit signed blinded block
 - `POST /eth/v2/beacon/blinded_blocks` - Submit signed blinded block
 
 **Request Transformation:**
 
-**`GET /eth/v3/validator/blocks/{slot}` (request unsigned block):**
+**`GET /eth/v3/validator/blocks/{slot}`:**
 
-- **Request query parameters**:
-  - `randao_reveal`: Public share signature from VC (partial RANDAO)
-  - `graffiti`: Unchanged
-  - `builder_boost_factor`: Set to max if builder enabled
-- **RANDAO processing**:
-  1. Extract RANDAO reveal signature from query
-  2. Create `ParSignedData` for `DutyRandao` with signature
-  3. Verify partial RANDAO signature against public share
-  4. Store RANDAO partial signature for aggregation
+- **Request query parameters from VC**:
+  - `randao_reveal`: Public share signature (partial RANDAO)
+  - `graffiti`: Provided by VC (optional)
+  - `builder_boost_factor`: Provided by VC (optional)
+- **RANDAO processing** (prerequisite for block proposal):
+  1. Extract RANDAO reveal signature from VC request
+  2. Create `ParSignedData` for `DutyRandao` with partial signature
+  3. Verify partial RANDAO signature against this node's public share
+  4. Exchange partial RANDAO signatures between nodes via [ParSigEx](parsigex.md) and aggregate to threshold signature
+  5. Store aggregated RANDAO to use in block request to beacon node
+- **Request to beacon node**:
+  - `randao_reveal`: Aggregated threshold RANDAO signature (retrieved from AggSigDB)
+  - `graffiti`: Cluster-configured graffiti (replaces VC graffiti, can be set per-validator or default "charon/version-commit")
+  - `builder_boost_factor`: Set to max if builder enabled (overrides VC value)
 - **Response**: No key transformation in block body
-- **Additional processing**: Blocks until nodes agree on proposal data via [consensus](consensus.md)
+- **Additional processing**: Unsigned block goes through [consensus](consensus.md) to ensure all nodes agree on the same block data
 
-**`POST /eth/v2/beacon/blocks` (submit signed block):**
+**`POST /eth/v2/beacon/blocks` and `POST /eth/v2/beacon/blinded_blocks`:**
 
 - **Request body transformation**:
   1. Extract proposer index from block
@@ -124,39 +134,47 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
   6. Verify partial signature against this node's public share
 - **No response** (204 on success)
 
-**`POST /eth/v2/beacon/blinded_blocks` (submit signed blinded block):**
-
-- Same transformation as regular blocks above
-
 **Implementation Details:**
 
-- RANDAO reveal is processed separately before block request
+- RANDAO reveal is processed separately at the time of receiving `GET /eth/v3/validator/blocks/{slot}` from the VC but before `GET /eth/v3/validator/blocks/{slot}` is sent to the BN
 - Block matching prevents VCs from signing different block data
 
 ### Sync Committee Endpoints
 
+- `POST /eth/v1/beacon/pool/sync_committees` - Submit sync committee messages
 - `GET /eth/v1/validator/sync_committee_contribution` - Unsigned sync committee contribution
 - `POST /eth/v1/validator/contribution_and_proofs` - Submit sync committee contributions
-- `POST /eth/v1/validator/sync_committee_messages` - Submit sync committee messages
+
+**Note**: There is no GET endpoint for unsigned sync committee messages. VCs construct sync committee messages by querying the beacon block root from the standard Beacon API (`GET /eth/v1/beacon/blocks/head/root`), then signing a message with `{slot, beacon_block_root, validator_index, signature}`.
 
 **Request Transformation:**
 
-**`POST /eth/v1/validator/sync_committee_messages` (submit sync messages):**
+**`POST /eth/v1/validator/sync_committee_messages`:**
 
 - **Request body transformation**:
   1. Extract validator index from each sync committee message
   2. Map validator index → DV root public key
   3. Create `ParSignedData` for sync committee message
   4. Verify partial signature against this node's public share
+  5. Exchange partial signatures between nodes via [ParSigEx](parsigex.md) and aggregate to threshold signatures
 - **No response** (204 on success)
 
 **`GET /eth/v1/validator/sync_committee_contribution`:**
 
+- **Prerequisite**: This endpoint requires sync contribution selection proofs from `POST /eth/v1/validator/sync_committee_selections`:
+  1. VC determines which validators should aggregate sync messages for each subcommittee
+  2. VC creates selection proofs (partial signatures on `SyncAggregatorSelectionData{slot, subcommittee_index}`)
+  3. VC submits partial selection proofs to DV via POST sync_committee_selections
+  4. DV verifies partial selection signatures
+  5. DV exchanges and aggregates selection proofs between nodes
+  6. DV returns aggregated selection proofs as the response to POST sync_committee_selections
+  7. VC evaluates `is_sync_committee_aggregator()` using the aggregated selection proof
+  8. Only validators selected as aggregators (based on the aggregated selection proof) will call this GET endpoint to fetch sync contribution
 - **Request**: Query parameters unchanged (slot, subcommittee_index, beacon_block_root)
 - **Response**: No key transformation in contribution data
 - **Additional processing**: Blocks until nodes agree on sync contribution data via [consensus](consensus.md)
 
-**`POST /eth/v1/validator/contribution_and_proofs` (submit aggregated contributions):**
+**`POST /eth/v1/validator/contribution_and_proofs`:**
 
 - **Request body transformation**:
   1. Extract aggregator public key from contribution
@@ -174,31 +192,30 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 - `POST /eth/v1/validator/beacon_committee_selections` - Beacon committee selections
 - `POST /eth/v1/validator/sync_committee_selections` - Sync committee selections
-- `POST /eth/v1/validator/register_validator` - Builder registration (returns 200 OK, no processing)
-- `POST /eth/v1/validator/prepare_beacon_proposer` - Fee recipient registration (returns 200 OK, no processing)
+- `POST /eth/v1/validator/register_validator` - Builder registration
+- `POST /eth/v1/validator/prepare_beacon_proposer` - Fee recipient registration
 
 **Request Transformation:**
 
 **`POST /eth/v1/validator/beacon_committee_selections`:**
 
-- **Request body**: List of selections with public shares and slots
+- **Request body**: List of selections with validator indices, slots, and partial BLS selection proof signatures from VC
 - **Processing**:
-  1. For each selection, map public share → DV root public key
-  2. Query duty definitions to verify eligibility
-  3. Create `DutyPrepareAggregator` for each selection
-  4. Sign selection proof with partial signature
-  5. Exchange and aggregate selection proofs
-- **Response transformation**: Return aggregated selection proofs to VC
+  1. For each selection, look up DV root public key from active validator set using validator index
+  2. Create `ParSignedData` for `DutyPrepareAggregator`
+  3. Verify partial BLS selection proof signature against this node's public share
+  4. Exchange selection proofs between nodes via [ParSigEx](parsigex.md) and aggregate to threshold signatures
+- **Response transformation**: Return aggregated selection proofs (threshold BLS signatures) to VC
 
 **`POST /eth/v1/validator/sync_committee_selections`:**
 
-- **Request body**: List of sync selections with public shares
+- **Request body**: List of sync selections with validator indices, slots, subcommittee indices, and partial BLS
 - **Processing**:
-  1. For each selection, map public share → DV root public key
-  2. Create `DutyPrepareSyncContribution` for selection
-  3. Sign selection proof with partial signature
-  4. Exchange and aggregate selection proofs
-- **Response transformation**: Return aggregated selection proofs to VC
+  1. For each selection, look up DV root public key from active validator set using validator index
+  2. Create `ParSignedData` for `DutyPrepareSyncContribution`
+  3. Verify partial BLS selection proof signature against this node's public share
+  4. Exchange selection proofs between nodes via [ParSigEx](parsigex.md) and aggregate to threshold signatures
+- **Response transformation**: Return aggregated selection proofs (threshold BLS signatures) to VC
 
 **`POST /eth/v1/validator/register_validator`:**
 
@@ -213,7 +230,10 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 - **Request**: Accepted but ignored (no processing)
 - **Response**: Returns success (200) without processing
-- **Rationale**: Fee recipients configured in cluster lock during DKG
+- **Rationale**: Fee recipient addresses are configured in the cluster lock, not via VC requests. The endpoint returns 200 OK to maintain compatibility with VCs, but the submissions are ignored.
+- **Actual submission**: Charon automatically submits with cluster-configured fee recipients:
+  - At Charon startup (for all active DVs in cluster)
+  - At the first slot of every epoch (for all active DVs)
 
 **Implementation Details:**
 
@@ -223,7 +243,7 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 ### Metadata Endpoints
 
-- `GET /eth/v1/node/version` - Node version (returns DV version)
+- `GET /eth/v1/node/version` - Node version
 - `GET /eth/v1/beacon/states/{state_id}/validators` - Get validators
 - `GET /eth/v1/beacon/states/{state_id}/validators/{validator_id}` - Get validator
 
@@ -237,18 +257,14 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 
 **`GET /eth/v1/beacon/states/{state_id}/validators`:**
 
-- **Request parameters**:
-  - Can specify validator IDs as public keys (public shares) or indices
-  - Query parameters: `id` array with pubkeys or indices
-  - POST body: `ids` array (alternative to query params)
 - **Request transformation**:
   1. If IDs are public shares (0x-prefixed), map each share → DV root public key
   2. Query beacon node with DV root public keys
-  3. Supports caching - checks validator cache before querying BN
+  3. Supports caching for this heavy request
 - **Response transformation**:
   1. For each validator in response, check if it's a cluster validator
-  2. If cluster validator: `validator.PublicKey` (root) → `pubshare` (this node's share)
-  3. If not cluster validator: leave unchanged (ignoreNotFound=true for "all validators" queries)
+  2. If cluster validator: `validator.PublicKey` (DV root public key) → public share (this node's share)
+  3. If not cluster validator: leave unchanged
 - **Returns**: Modified validator set with public shares for cluster validators
 
 **`GET /eth/v1/beacon/states/{state_id}/validators/{validator_id}`:**
@@ -267,6 +283,11 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 ### Deprecated Endpoints (Return 404)
 
 - `GET /eth/v1/validator/aggregate_attestation` - Use v2
+- `POST /eth/v1/validator/aggregate_and_proofs` - Use v2
+- `GET /eth/v1/validator/blinded_blocks/{slot}` - Use v3
+- `GET /eth/v2/validator/blinded_blocks/{slot}` - Use v3
+- `POST /eth/v1/beacon/blocks` - Use v2
+- `POST /eth/v1/beacon/blinded_blocks` - Use v2
 - `GET /teku_proposer_config` - Teku-specific
 - `GET /proposer_config` - Teku-specific
 
@@ -282,316 +303,35 @@ All other beacon API endpoints are **reverse-proxied** directly to the upstream 
 - Event streams (`/eth/v1/events`)
 - All other standard beacon node API endpoints
 
-## Duty Workflows
+## Selection Endpoints: DV-Specific Design
 
-### Attestation Duty Flow
+The selection endpoints (`beacon_committee_selections` and `sync_committee_selections`) are unique to distributed validators and require special explanation:
 
-```
-┌──────────────┐
-│ Validator    │
-│ Client (VC)  │
-└──────┬───────┘
-       │
-       │ 1. GET /eth/v1/validator/attestation_data
-       │    ?slot=X&committee_index=Y
-       │
-       ▼
-┌──────────────────────────────────────────────────────────────┐
-│                      ValidatorAPI                            │
-│                                                              │
-│  ┌────────────────────────────────────────────────────┐      │
-│  │ AttestationData(slot, commIdx)                     │      │
-│  │   └─> AwaitAttestation(slot, commIdx) ─────────┐   │      │
-│  └────────────────────────────────────────────────┼───┘      │
-└─────────────────────────────────────────────────┬─┼──────────┘
-                                                  │ │
-                        Blocks until available    │ │
-                                                  │ │
-                                                  ▼ │
-┌───────────────────────────────────────────────────┼──────────┐
-│                      DutyDB                       │          │
-│                                                   │          │
-│  ┌───────────────────────────────────────────┐    │          │
-│  │ Store(DutyAttester, UnsignedDataSet)      │◄───┘          │
-│  │   - Stores attestation data per (slot,    │               │
-│  │     committee_index)                      │               │
-│  │   - Resolves pending queries              │               │
-│  └───────────────────────────────────────────┘               │
-└──────────────────────────────────────────────────────────────┘
+### Why Selection Endpoints Exist
 
+In standard Ethereum validators, a VC creates selection proofs by signing with its private key. In DVs, this process must be distributed:
 
-   ┌──────────────┐
-   │ Validator    │
-   │ Client (VC)  │
-   └──────┬───────┘
-          │
-          │ 2. POST /eth/v2/validator/attestations
-          │    Body: [Attestation{data, signature, ...}]
-          │
-          ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │                      ValidatorAPI                           │
-   │                                                             │
-   │  ┌────────────────────────────────────────────────────┐     │
-   │  │ SubmitAttestations(attestations)                   │     │
-   │  │   1. Extract pubkey via pubKeyByAttestation()      │     │
-   │  │   2. Create ParSignedData (partial signature)      │     │
-   │  │   3. verifyPartialSig() with share public key      │─────┼──┐
-   │  │   4. Call subscribers with ParSignedDataSet        │     │  │
-   │  └────────────────────────────────────────────────────┘     │  │
-   └───────────────────────────────────────────────┬─────────────┘  │
-                                                   │                │
-                                                   │ Stores         │ Verification
-                                                   ▼                │ Failure
-   ┌──────────────────────────────────────────────────────────┐     │
-   │                    ParSigDB                              │     │
-   │  - Stores partial signatures                             │     │
-   │  - [ParSigEx](parsigex.md) exchanges signatures          │     │
-   │  - SigAgg aggregates to full signature                   │     │
-   │  - Broadcaster submits to beacon node                    │     │
-   └──────────────────────────────────────────────────────────┘     │
-                                                                    │
-   ┌──────────────────────────────────────────────────────────┐     │
-   │                 Error Response                           │◄────┘
-   │  Returns 400/500 to VC if verification fails             │
-   └──────────────────────────────────────────────────────────┘
-```
-
-### Block Proposal Duty Flow
-
-```
-┌──────────────┐
-│ Validator    │
-│ Client (VC)  │
-└──────┬───────┘
-       │
-       │ 1. GET /eth/v3/validator/blocks/{slot}
-       │    ?randao_reveal=0x...&graffiti=0x...
-       │
-       ▼
-┌──────────────────────────────────────────────────────────────┐
-│                      ValidatorAPI                            │
-│                                                              │
-│  ┌────────────────────────────────────────────────────┐      │
-│  │ Proposal(slot, randao, graffiti)                   │      │
-│  │                                                    │      │
-│  │   A. Store RANDAO as ParSignedData                 │      │
-│  │      (DutyRandao, partial signature)               │──────┼──┐
-│  │                                                    │      │  │
-│  │   B. AwaitProposal(slot) ──────────────────────┐   │      │  │
-│  │      (blocks until block available)            │   │      │  │
-│  └────────────────────────────────────────────────┼───┘      │  │
-└─────────────────────────────────────────────────┬─┼──────────┘  │
-                                                  │ │             │
-                        Blocks until available    │ │             │
-                                                  │ │             │
-                                                  ▼ │             │
-┌───────────────────────────────────────────────────┼────────┐    │
-│                      DutyDB                       │        │    │
-│  - Stores unsigned blocks                         │        │    │
-│  - Retrieved after consensus completes            │◄───────┘    │
-└───────────────────────────────────────────────────────────┘     │
-                                                                  │
-                                                  Stores RANDAO   │
-                                                  partial sig     │
-                                                        │         │
-                                                        ▼         │
-┌──────────────────────────────────────────────────────────┐      │
-│  ParSigDB -> ParSigEx -> SigAgg -> AggSigDB              │      │
-│  (RANDAO aggregation happens before block fetch)         │      │
-└──────────────────────────────────────────────────────────┘      │
-                                                                  │
-   ┌──────────────┐                                               │
-   │ Validator    │                                               │
-   │ Client (VC)  │                                               │
-   └──────┬───────┘                                               │
-          │                                                       │
-          │ 2. POST /eth/v2/beacon/blocks                         │
-          │    Body: SignedBeaconBlock{message, signature}        │
-          │                                                       │
-          ▼                                                       │
-   ┌──────────────────────────────────────────────────────────┐   │
-   │                  ValidatorAPI                            │   │
-   │                                                          │   │
-   │  SubmitProposal(signedBlock)                             │   │
-   │   1. Get pubkey from duty definitions                    │   │
-   │   2. AwaitProposal(slot) to get unsigned block           │   │
-   │   3. Verify signed matches unsigned (anti-slashing)      │───┼──┐
-   │   4. Create ParSignedData (partial signature)            │   │  │
-   │   5. verifyPartialSig() with share public key            │───┼──┼─┐
-   │   6. Exchange, aggregate, broadcast                      │   │  │ │
-   └──────────────────────────────────────────────────────────┘   │  │ │
-                                                                  │  │ │
-   ┌──────────────────────────────────────────────────────────┐   │  │ │
-   │         Error Response (Mismatch)                        │◄──┘  │ │
-   │  Returns error if signed block doesn't match unsigned    │      │ │
-   └──────────────────────────────────────────────────────────┘      │ │
-                                                                     │ │
-   ┌──────────────────────────────────────────────────────────┐      │ │
-   │         Error Response (Verification Failure)            │◄─────┘ │
-   │  Returns 400/500 to VC if partial sig verification fails │        │
-   └──────────────────────────────────────────────────────────┘        │
-                                                                       │
-   ┌──────────────────────────────────────────────────────────┐        │
-   │         Error Response (RANDAO Verification)             │◄───────┘
-   │  Returns error if RANDAO partial sig verification fails  │
-   └──────────────────────────────────────────────────────────┘
-```
-
-### Sync Committee Duty Flow
-
-```
-┌──────────────┐
-│ Validator    │
-│ Client (VC)  │
-└──────┬───────┘
-       │
-       │ 1. POST /eth/v1/validator/sync_committee_messages
-       │    Body: [SyncCommitteeMessage{slot, beacon_block_root,
-       │                                validator_index, signature}]
-       │
-       ▼
-┌──────────────────────────────────────────────────────────────┐
-│                      ValidatorAPI                            │
-│                                                              │
-│  SubmitSyncCommitteeMessages(messages)                       │
-│   1. Extract pubkey from validator index                     │
-│   2. Create ParSignedData (partial signature)                │
-│   3. verifyPartialSig() with share public key                │──┐
-│   4. Exchange, aggregate, broadcast                          │  │
-└──────────────────────────────────────────────────────────────┘  │
-                                                                  │
-   ┌──────────────────────────────────────────────────────────┐   │
-   │         Error Response (Verification Failure)            │◄──┘
-   │  Returns 400/500 to VC if partial sig verification fails │
-   └──────────────────────────────────────────────────────────┘
-
-
-   ┌──────────────┐
-   │ Validator    │
-   │ Client (VC)  │
-   └──────┬───────┘
-          │
-          │ 2. GET /eth/v1/validator/sync_committee_contribution
-          │    ?slot=X&subcommittee_index=Y&beacon_block_root=0x...
-          │
-          ▼
-   ┌──────────────────────────────────────────────────────────┐
-   │                  ValidatorAPI                            │
-   │                                                          │
-   │  SyncCommitteeContribution(slot, subcommIdx, root)       │
-   │   └─> AwaitSyncContribution(...) (blocks until ready)    │
-   └──────────────────────────────────────────────────────────┘
-          │
-          ▼
-   ┌──────────────────────────────────────────────────────────┐
-   │                      DutyDB                              │
-   │  - Stores unsigned sync committee contributions          │
-   │  - Retrieved after consensus completes                   │
-   └──────────────────────────────────────────────────────────┘
-
-
-   ┌──────────────┐
-   │ Validator    │
-   │ Client (VC)  │
-   └──────┬───────┘
-          │
-          │ 3. POST /eth/v1/validator/contribution_and_proofs
-          │    Body: [SignedContributionAndProof{message, signature}]
-          │
-          ▼
-   ┌──────────────────────────────────────────────────────────┐
-   │                  ValidatorAPI                            │
-   │                                                          │
-   │  SubmitContributionAndProofs(contributions)              │
-   │   1. Extract pubkey from contribution                    │
-   │   2. Verify selection proof (inner signature)            │──┐
-   │   3. Create ParSignedData (partial outer sig)            │  │
-   │   4. verifyPartialSig() with share public key            │──┼─┐
-   │   5. Exchange, aggregate, broadcast                      │  │ │
-   └──────────────────────────────────────────────────────────┘  │ │
-                                                                 │ │
-   ┌─────────────────────────────────────────────────────────┐   │ │
-   │         Error Response (Selection Proof Invalid)        │◄──┘ │
-   │  Returns error if selection proof verification fails    │     │
-   └─────────────────────────────────────────────────────────┘     │
-                                                                   │
-   ┌─────────────────────────────────────────────────────────┐     │
-   │         Error Response (Verification Failure)           │◄────┘
-   │  Returns 400/500 to VC if partial sig verification fails│
-   └─────────────────────────────────────────────────────────┘
-```
-
-## Special Endpoints
-
-### Builder Registration
-
-**Endpoint:** `POST /eth/v1/validator/register_validator`
-
-Builder registrations are handled automatically rather than through VC requests:
-
-1. **VC Request Handling**: When VC submits a registration request, ValidatorAPI returns `200 OK` without processing
-2. **Actual Submission**: Pre-generated builder registrations are scheduled for submission:
-   - **At startup**: Registrations for all DVs in the cluster (from `cluster-lock.json`)
-   - **Every epoch**: Resubmissions at the first slot of each epoch
-3. **No Consensus**: Registrations bypass the consensus workflow entirely (no `DutyBuilderRegistration` duty)
-4. **Pre-generated**: Registrations are created during DKG and stored in the cluster lock file
-
-### Fee Recipient Preparation
-
-**Endpoint:** `POST /eth/v1/validator/prepare_beacon_proposer`
-
-This endpoint returns `200 OK` without processing:
-
-- Fee recipients are configured in the cluster lock file during [DKG](pedersen-dkg.md)
-- VCs don't need to specify fee recipients dynamically
-- Prevents VC misconfiguration from affecting distributed validator
-- Maintains compatibility with VCs that expect this endpoint to succeed
-
-### Committee Selections
-
-**Endpoints:**
-
-- `POST /eth/v1/validator/beacon_committee_selections`
-- `POST /eth/v1/validator/sync_committee_selections`
-
-These return selection proofs:
-
-1. VC requests selections for potential aggregator duties
-2. ValidatorAPI queries duty definitions to check eligibility
-3. For each validator, creates selection proof:
-   - `DutyPrepareAggregator` or `DutyPrepareSyncContribution`
-   - Goes through partial signing, exchange, aggregation
-   - Returns aggregated selection proof to VC
-4. VC uses selection proof when submitting aggregated duties
+1. **Partial Signatures**: Each node's VC signs with its public share (partial signature)
+2. **Exchange & Aggregation**: Nodes exchange these partial signatures via [ParSigEx](parsigex.md) and aggregate them via [SigAgg](sigagg.md) to create a valid threshold signature
+3. **Selection Evaluation**: The VC receives the aggregated threshold signature and evaluates the standard `is_aggregator()` function to determine if it should aggregate
 
 ## Content Type Support
 
-ValidatorAPI supports two content types for most endpoints:
-
-### JSON (application/json)
-
-- Default for most requests/responses
-- Standard Ethereum Beacon API format
-
-### SSZ (application/octet-stream)
-
-- More efficient binary encoding
-- Used for blocks and some large objects
-- Requested via `Content-Type: application/octet-stream` header
+DV must matches the Beacon API spec for both inbound and outbound requests, supporting JSON (`application/json`) and SSZ (`application/octet-stream`) content types as defined in the standard.
 
 ## Error Handling
 
 ### Verification Failures
 
-- **HTTP 400:** Invalid partial signature, bad request format
-- **HTTP 500:** Internal errors (consensus failure, beacon node unreachable)
+- **HTTP 4XX:** Client errors including invalid partial signatures (400), bad request format (400), not found (404), unsupported media type (415)
+- **HTTP 5XX:** Server errors including consensus failures (500), beacon node unreachable (500), internal errors (500)
 
 ### Timeout Errors
 
-- Unsigned data not available within timeout
-- Occurs when consensus doesn't complete in time
-- Returns context deadline exceeded error
+VCs can distinguish timeout errors by:
+
+- **HTTP 408** (Request Timeout): Returned when client cancels the request or context deadline exceeded
+- **Error message**: Contains "context deadline exceeded" or "client cancelled request" in the error response body
 
 ### Beacon Node Errors
 

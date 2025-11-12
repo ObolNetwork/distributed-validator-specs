@@ -1,4 +1,4 @@
-## Pedersen DKG interoperability spec
+# Pedersen DKG Interoperability Spec
 
 This document describes the Pedersen distributed key generation (DKG) protocol used for generating and resharing BLS validator keys.
 
@@ -8,16 +8,18 @@ Scope:
 - Protocol identifiers, sequencing, and nonce derivation
 - Output artifacts
 
-Out of scope: cryptographic routines, Kyber DKG internals, transport reliability;
+Out of scope: cryptographic routines, Kyber DKG internals, transport reliability
 
-### Terms and notation
+**Note**: This document describes the cryptographic DKG protocol only. See [DKG Sync Protocol](dkg-sync.md) for ceremony management.
 
-- n: number of participating nodes in the ceremony
-- t: threshold used by the DKG (default ceil(2n/3))
-- Session ID: a 32-byte value known to all nodes; it is the cluster Definition hash
-- Suite: BLS12-381, Kyber G1 for public points and scalars for shares
+## Terms and Notation
 
-### Protocol identifiers (libp2p)
+- `n`: number of participating nodes in the ceremony
+- `t`: threshold used by the DKG (default ceil(2n/3))
+- `Session ID`: a 32-byte value known to all nodes; it is the cluster Definition hash
+- `Suite`: BLS12-381, Kyber G1 for public points and scalars for shares
+
+## Protocol Identifiers (libp2p)
 
 All messages are sent under protocol ID prefix:
 
@@ -33,9 +35,9 @@ The following message topics are appended to the prefix when routing on libp2p:
 - resp_bundle (p2p to all peers)
 - just_bundle (p2p to all peers)
 
-### Reliable broadcast for node_pubkeys
+## Reliable Broadcast for node_pubkeys
 
-Why this matters: the ephemeral node public keys are a single-shot, invariant input required before anyone starts the DKG. If a malicious node could equivocate (send different pubkeys to different peers), the group view would diverge. Implementations therefore use a lightweight “signed broadcast” component for `node_pubkeys` instead of plain p2p fan-out. See the standalone Reliable Broadcast spec for generic details; this section documents the DKG-specific usage.
+Why this matters: the ephemeral node public keys are a single-shot, invariant input required before anyone starts the DKG. If a malicious node could equivocate (send different pubkeys to different peers), the group view would diverge. Implementations therefore use a lightweight "signed broadcast" component for `node_pubkeys` instead of plain p2p fan-out. See the standalone Reliable Broadcast spec for generic details; this section documents the DKG-specific usage.
 
 Two-phase signed broadcast (summary):
 
@@ -49,7 +51,8 @@ Two-phase signed broadcast (summary):
 
 2. Broadcast phase
    - The broadcaster verifies all collected signatures locally against the known peer list and then sends a single `BCastMessage(Id, Message=Any(NodePubKeyMessage), Signatures=[...])` to all peers.
-  - On receipt, the server re-verifies the whole signature set before invoking the registered callback that finally delivers the `NodePubKeyMessage` to the DKG board.
+
+- On receipt, the server re-verifies the whole signature set before invoking the registered callback that finally delivers the `NodePubKeyMessage` to the DKG board.
 
 Reference
 
@@ -65,9 +68,9 @@ Properties provided
 Contrast with regular libp2p p2p fan-out
 
 - Plain p2p (used for DKG deals/responses/justifications and `val_pubkey_share`) is direct stream sends to each peer with per-stream timeouts. It doesn’t collect group signatures, doesn’t deduplicate across the group, and can’t prevent a sender from delivering divergent payloads to different peers if the application layer doesn’t defend against it.
-- Using signed broadcast for `node_pubkeys` adds an all-peers endorsement that the exact same payload was observed and approved by the group before it is considered valid. This is heavier than direct p2p, so Charon limits it to the once-per-ceremony `node_pubkeys` step; the high-churn DKG rounds rely on Kyber’s protocol phases instead.
+- Using signed broadcast for `node_pubkeys` adds an all-peers endorsement that the exact same payload was observed and approved by the group before it is considered valid. This is heavier than direct p2p, so Charon limits it to the once-per-ceremony `node_pubkeys` step; the high-churn DKG rounds rely on Kyber's protocol phases instead.
 
-### Nonce derivation
+## Nonce Derivation
 
 All participants MUST derive the DKG nonce from the reliably broadcast ephemeral node public keys collected in step 1.
 
@@ -83,58 +86,15 @@ Notes:
 - Deterministic ordering is critical; use the same ordered peer list used everywhere else in the ceremony.
 - Implementations should expose a helper similar to `generate_nonce_from_node_pubkeys(node_pubkeys: List[bytes]) -> bytes`.
 
-### Message schemas (protobuf-equivalent)
+## Message Schemas
 
-The following structures are used over the wire. Implementations must serialize bytes as the canonical encoding of kyber points/scalars in the chosen suite (BLS12-381).
+The following protobuf definitions are used over the wire:
 
-The protobufs used by Charon are available [here](https://github.com/ObolNetwork/charon/tree/main/dkg/dkgpb/v1).
+- [pedersen.proto](../../proto/pedersen.proto) - Pedersen DKG message definitions
 
-- NodePubKeyMessage
+See the Python reference implementation: [`NodePubKeyMessage`](../../src/dv_spec/subspecs/dkg/message.py#L86-L103), [`ValidatorPubKeyShareMessage`](../../src/dv_spec/subspecs/dkg/message.py#L105-L112), [`PedersenDealBundle`](../../src/dv_spec/subspecs/dkg/message.py#L122-L132), [`PedersenResponseBundle`](../../src/dv_spec/subspecs/dkg/message.py#L141-L149), and [`PedersenJustificationBundle`](../../src/dv_spec/subspecs/dkg/message.py#L157-L164).
 
-  - session_id: bytes
-  - public_key: bytes // kyber.Point (ephemeral BLS public key)
-  - shares (optional):
-    - NodePubKeyShares
-      - public_key_shares: repeated bytes // kyber.Point, one per validator index (reshare only)
-
-- ValidatorPubKeyShareMessage
-
-  - session_id: bytes
-  - public_key_share: bytes // kyber.Point
-
-- PedersenDealBundle
-
-  - dealer_index: uint32
-  - deals: repeated PedersenDeal
-    - PedersenDeal
-      - share_index: uint32
-      - encrypted_share: bytes
-  - public: repeated bytes // kyber.Point commitments
-  - session_id: bytes
-  - signature: bytes // authentication tag
-
-- PedersenResponseBundle
-
-  - share_index: uint32
-  - responses: repeated PedersenResponse
-    - PedersenResponse
-      - dealer_index: uint32
-      - status: bool
-  - session_id: bytes
-  - signature: bytes
-
-- PedersenJustificationBundle
-  - dealer_index: uint32
-  - justifications: repeated PedersenJustification
-    - PedersenJustification
-      - share_index: uint32
-      - share: bytes // kyber.Scalar
-  - session_id: bytes
-  - signature: bytes
-
-Reference Python models are provided in `dv_spec.subspecs.dkg.pedersen`.
-
-### Ceremony sequencing
+## Ceremony Sequencing
 
 1. Ephemeral node keys broadcast
 
@@ -167,18 +127,18 @@ Reference Python models are provided in `dv_spec.subspecs.dkg.pedersen`.
      - secret_share: kyber.Scalar (this node's private share)
      - public_shares: map[int->bytes], share indices 1..n for the nodes that will remain after resharing
 
-### Indexing rules
+## Indexing Rules
 
 - Node/peer index: 0-based position in the peer list
 - Share index in bundles: 0-based unless specified by library
 - Public shares map used in cluster artifacts: 1-based index = PeerIdx + 1
 
-### Resharing notes
+## Resharing Notes
 
 - The set of nodes in `oldNodes` and `newNodes` is determined by the rotation being performed; removed nodes must not contribute new shares and should broadcast an empty `ValidatorPubKeyShareMessage`.
 - The threshold t' should not be increased in add-operator flows to avoid old shares enabling reconstruction below the new threshold.
 
-## Edit operations powered by Pedersen DKG
+## Edit Operations Powered by Pedersen DKG
 
 This section maps cluster edit commands to concrete Pedersen DKG ceremonies. Each operation specifies who participates, how the nonce is derived, which messages are exchanged, and what artifacts are produced/updated.
 
@@ -189,7 +149,7 @@ General across all edit operations:
 - Indexing: Peer index is 0-based; share index used in artifacts is 1-based = PeerIdx + 1.
 - Outputs: After a successful ceremony, the cluster lock and node signatures are updated as applicable, and a new data directory with validator key shares and metadata is written.
 
-### Add validators (append new DVs; operators unchanged)
+### Add Validators (append new DVs; operators unchanged)
 
 Purpose
 
@@ -217,9 +177,9 @@ Outputs
 
 Operational constraints
 
-- If a node lacks access to existing validator shares, the ceremony can proceed in an “unverified” mode (cluster lock signatures may be skipped by implementations); functionality remains intact but verification must be disabled when starting the cluster.
+- If a node lacks access to existing validator shares, the ceremony can proceed in an "unverified" mode (cluster lock signatures may be skipped by implementations); functionality remains intact but verification must be disabled when starting the cluster.
 
-### Recreate private keys (reshare; same operators set)
+### Recreate Private Keys (reshare; same operators set)
 
 Purpose
 
@@ -245,7 +205,7 @@ Outputs
 
 - New private shares for all validators; public commitments unchanged; cluster lock contents unchanged aside from updated node signatures and metadata.
 
-### Add operators (expand operator set; validators intact)
+### Add Operators (expand operator set; validators intact)
 
 Purpose
 
@@ -275,7 +235,7 @@ Constraints and validations
 
 - New operator identities must not duplicate existing ones. Nodes that are new to the cluster need not have access to prior validator shares.
 
-### Remove operators (shrink operator set; validators intact)
+### Remove Operators (shrink operator set; validators intact)
 
 Purpose
 
@@ -304,4 +264,4 @@ Outputs
 
 Constraints and validations
 
-- When removing more than F operators, at least t participants are required. Operators listed for removal must exist in the current lock; “participating operators” (if specified) must also be valid current operators. An operator being removed cannot participate unless explicitly included in the participating set.
+- When removing more than F operators, at least t participants are required. Operators listed for removal must exist in the current lock; "participating operators" (if specified) must also be valid current operators. An operator being removed cannot participate unless explicitly included in the participating set.

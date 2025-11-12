@@ -2,13 +2,29 @@
 
 This document describes the Priority protocol used for achieving cluster-wide consensus on ordered lists of arbitrary priorities across distributed validator nodes.
 
-Scope:
+## Overview
+
+The Priority protocol enables distributed validator nodes to reach cluster-wide consensus on ordered preference lists. This is essential for coordinating behavior across independent nodes that may have different capabilities, versions, or configurations.
+
+### Use Cases
+
+Distributed validators are composed of multiple independent nodes that need to coordinate on shared preferences. For example:
+
+- **Consensus protocol selection**: When a cluster needs to agree on which consensus protocol to use (e.g., QBFT v2.0 or future protocols), each node may support different versions. The priority protocol allows nodes to exchange their preferences and converge on the best protocol supported by threshold nodes.
+
+- **Version monitoring**: During cluster upgrades, nodes running different Charon versions exchange version information. This information is monitored and logged, providing visibility into cluster version heterogeneity.
+
+- **Proposal type preferences**: Nodes may prefer different block proposal strategies (full blocks, builder/blinded blocks, or synthetic proposals). The priority protocol ensures the cluster uses proposal types supported by threshold nodes.
+
+### Specification Scope
+
+This document describes:
 
 - Over-the-wire message shapes and fields
 - Protocol identifiers and exchange patterns
 - Result calculation and scoring logic
 
-Out of scope: cryptographic signature routines, consensus algorithm implementation, transport reliability;
+Out of scope: cryptographic signature routines, consensus algorithm implementation, transport reliability
 
 ## Terms and Notation
 
@@ -41,11 +57,11 @@ Priority implements a two-phase request-response pattern:
    - The node's peer ID
    - A cryptographic signature
 
-2. **Broadcast phase**: The initiating node sends its `PriorityMsg` to all other peers using libp2p `SendReceive`.
+2. **Broadcast phase**: Each node in the cluster independently initiates the priority protocol by sending its `PriorityMsg` to all other peers using libp2p `SendReceive`. All nodes perform this broadcast in parallel.
 
 3. **Handler response**: Each peer that receives a `PriorityMsg` request immediately responds with its own `PriorityMsg` for the same duty.
 
-4. **Collection**: The initiating node collects responses from peers, deduplicating by peer ID (only the first message from each peer is kept).
+4. **Collection**: Each node collects priority messages from peers. Messages are deduplicated by peer ID (only the first message from each peer is kept). Duplicates can occur because nodes both send their own broadcast AND respond to incoming requests from other nodes.
 
 5. **Exchange completion**: The exchange phase completes when either:
    - Messages from all peers have been received, or
@@ -53,7 +69,7 @@ Priority implements a two-phase request-response pattern:
 
 ### Phase 2: Consensus
 
-1. **Result calculation**: Once the exchange phase completes, each node deterministically calculates cluster-wide priorities using the `calculateResult` function.
+1. **Result calculation**: Once the exchange phase completes, each node deterministically calculates cluster-wide priorities from the collected messages.
 
 2. **Consensus proposal**: Each node proposes its calculated `PriorityResult` to the consensus protocol (typically QBFT).
 
@@ -264,13 +280,3 @@ The scoring algorithm ensures deterministic, fair prioritization:
 - **Request buffering**: Each duty instance maintains its own request buffer; peer requests are queued and responded to by the running instance
 
 - **Empty topics**: Topics with no priorities meeting the threshold are included in results with empty priority lists
-
-### Use Cases
-
-The priority protocol is used in Charon for:
-
-1. **Consensus protocol selection**: Nodes exchange their supported consensus protocols in preference order at the last slot of each epoch (`DutyInfoSync`). The cluster selects the most preferred protocol supported by threshold nodes, which becomes active in the next epoch.
-
-2. **Version and capability negotiation**: Nodes exchange supported versions and proposal types (full, builder, synthetic) to ensure cluster-wide compatibility.
-
-Note: While the protocol is designed to be generic and duty-scoped, it is currently only used for `DutyInfoSync` duties.

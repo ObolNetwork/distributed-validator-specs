@@ -3,7 +3,7 @@
 Currently includes the Pedersen DKG interoperability types.
 """
 
-from .pedersen import (
+from .message import (
     PEDERSEN_DKG_PROTOCOL_ID,
     NodePubKeyMessage,
     NodePubKeyShares,

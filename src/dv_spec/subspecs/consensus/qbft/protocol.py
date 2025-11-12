@@ -121,7 +121,7 @@ class QBFTConsensus:
 
         # (1)
         all_none_prepared = all(
-            rc.prepared_round is None and rc.prepared_value_hash is None for rc in qrc
+            rc.prepared_round == 0 and rc.prepared_value_hash == b"\x00" * 32 for rc in qrc
         )
         if all_none_prepared:
             return True
@@ -143,7 +143,7 @@ class QBFTConsensus:
             return False
 
         # Ensure no ROUND-CHANGE has higher prepared round
-        if any(rc.prepared_round is not None and rc.prepared_round > highest_pr for rc in qrc):
+        if any(rc.prepared_round > 0 and rc.prepared_round > highest_pr for rc in qrc):
             return False
 
         # Ensure at least one ROUND-CHANGE with the highest prepared round/value
@@ -162,11 +162,13 @@ class QBFTConsensus:
         if msg.type != MsgType.ROUND_CHANGE:
             return False
 
+        # Round-change with no prepared value requires no justification
         if (
             len(consensus_msg.justification) == 0
-            and msg.prepared_round is None
-            and msg.prepared_value_hash is None
+            and msg.prepared_round == 0
+            and msg.prepared_value_hash == b"\x00" * 32
         ):
+            return True
             return True
 
         pr = msg.prepared_round
@@ -336,8 +338,8 @@ class QBFTConsensus:
                     if (
                         m.msg.type == MsgType.ROUND_CHANGE
                         and m.msg.round == msg.round
-                        and m.msg.prepared_round is None
-                        and m.msg.prepared_value_hash is None
+                        and m.msg.prepared_round == 0
+                        and m.msg.prepared_value_hash == b"\x00" * 32
                     )
                 ]
 
@@ -373,7 +375,7 @@ class QBFTConsensus:
                         used_sources = set()
 
                         for rc in qrc:
-                            if rc.msg.prepared_round is not None and rc.msg.prepared_round > pr:
+                            if rc.msg.prepared_round > 0 and rc.msg.prepared_round > pr:
                                 continue
 
                             if rc.msg.peer_idx in used_sources:
@@ -527,8 +529,8 @@ class QBFTConsensus:
                 for rc in justification:
                     if rc.type != MsgType.PREPARE:
                         continue
-                    if rc.prepared_round is not None and rc.prepared_value_hash is not None:
-                        key = (rc.prepared_round, rc.prepared_value_hash)
+                    if rc.value_hash is not None:
+                        key = (rc.round, rc.value_hash)
                         prepared_values[key] = prepared_values.get(key, 0) + 1
 
                 if prepared_values:
