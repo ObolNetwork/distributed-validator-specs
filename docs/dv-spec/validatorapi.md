@@ -324,7 +324,7 @@ DV must matches the Beacon API spec for both inbound and outbound requests, supp
 ### Verification Failures
 
 - **HTTP 4XX:** Client errors including invalid partial signatures (400), bad request format (400), not found (404), unsupported media type (415)
-- **HTTP 500:** Server errors including consensus failures (500), beacon node unreachable (500), internal errors (500)
+- **HTTP 5XX:** Server errors including consensus failures (500), beacon node unreachable (500), internal errors (500)
 
 ### Timeout Errors
 
