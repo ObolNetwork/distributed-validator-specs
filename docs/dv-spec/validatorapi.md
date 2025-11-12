@@ -315,16 +315,6 @@ In standard Ethereum validators, a VC creates selection proofs by signing with i
 2. **Exchange & Aggregation**: Nodes exchange these partial signatures via [ParSigEx](parsigex.md) and aggregate them via [SigAgg](sigagg.md) to create a valid threshold signature
 3. **Selection Evaluation**: The VC receives the aggregated threshold signature and evaluates the standard `is_aggregator()` function to determine if it should aggregate
 
-### Why They're Synchronous (Blocking)
-
-Selection endpoints **block** until aggregation completes, rather than being asynchronous:
-
-- **Timing Critical**: VCs need selection results immediately to decide whether to aggregate in the current slot
-- **Simplicity**: Synchronous responses are simpler for VCs than polling or waiting for async callbacks
-- **Consensus Not Required**: Unlike unsigned data (attestations, blocks), selections don't need QBFT consensus - just signature aggregation
-
-This design allows standard VCs (Lighthouse, Teku, etc.) to work with DVs without modification, as the selection proof aggregation is transparent to the VC.
-
 ## Content Type Support
 
 DV must matches the Beacon API spec for both inbound and outbound requests, supporting JSON (`application/json`) and SSZ (`application/octet-stream`) content types as defined in the standard.
