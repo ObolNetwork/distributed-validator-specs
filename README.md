@@ -6,6 +6,37 @@
 
 Python specifications and protocol definitions for Ethereum distributed validators. This repository contains the core data structures, validation rules, and protocol specifications needed to implement distributed validator technology.
 
+The goal of these specifications is to describe the Obol distributed validator protocol precisely enough that independent implementations can interoperate within the same cluster.
+
+## Implementations
+
+| Client                                                    | Language | Maintainer    | Status                              |
+| --------------------------------------------------------- | -------- | ------------- | ----------------------------------- |
+| [Charon](https://github.com/ObolNetwork/charon)           | Go       | Obol          | Production; reference implementation |
+| [Pluto](https://github.com/NethermindEth/pluto)           | Rust     | Nethermind    | In development                      |
+
+Charon is the reference implementation these specs are derived from. Pluto is an independent implementation targeting full wire-level compatibility with Charon; these specs are the intended source of truth for that interoperability.
+
+### Charon version anchor
+
+These specs track Charon `main` and were last validated against Charon
+commit `2eb6798e` (2026-07-14, after `v1.10.3`, during `v1.11.0` release
+candidates).
+
+Note for implementers pinned to older Charon versions (e.g. Pluto currently
+targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
+
+| Behavior | First Charon release |
+| ------------------------------------------------------------------ | -------------------- |
+| `MsgSync.nickname` field (DKG sync)                                 | `v1.9.5`             |
+| Deterministic (genesis-derived) eager double linear round deadlines | `v1.9.5`             |
+| Linear round timer subsequent-round timeout fix                     | `v1.11.0`            |
+| QBFT DECIDED-resend rate limit and message size/count limits        | `v1.11.0`            |
+
+All of these are backwards compatible on the wire (unknown proto fields are
+ignored; limits only reject messages no honest peer sends), so implementing
+the current spec remains interoperable with older Charon peers.
+
 ## What's Included
 
 Interoperability specs and reference models:
@@ -64,7 +95,7 @@ uv run pytest
 │       ├── validator.py             # Core DV data structures (types/helpers)
 │       ├── client/                  # Client configuration examples
 │       ├── subspecs/                # Protocol implementations
-│       │   ├── bcast/               # Reliable broadcast
+│       │   ├── reliable_bcast/      # Reliable broadcast (charon's dkg/bcast)
 │       │   ├── consensus/           # QBFT consensus
 │       │   ├── dkg/                 # Pedersen DKG
 │       │   ├── dkg_sync/            # DKG synchronization

@@ -15,6 +15,7 @@ from .timer import (
     TimerType,
     create_timer,
     get_default_timer,
+    get_duty_start_delay,
 )
 
 __all__ = [
@@ -27,4 +28,6 @@ __all__ = [
     # Factory functions
     "create_timer",
     "get_default_timer",
+    # Helpers
+    "get_duty_start_delay",
 ]

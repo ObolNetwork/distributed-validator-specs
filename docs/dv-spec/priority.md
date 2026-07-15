@@ -41,8 +41,16 @@ Out of scope: cryptographic signature routines, consensus algorithm implementati
 All messages are sent under protocol ID:
 
 ```text
-/charon/priority/2.0.0
+charon/priority/2.0.0
 ```
+
+> **Warning**: Unlike every other protocol in this specification, this
+> protocol ID has **no leading `/`**. This is a historical accident in
+> Charon's implementation (`core/priority/prioritiser.go`) that is now
+> normative: the string above is exactly what appears on the wire, and
+> alternative implementations (e.g. Pluto) must reproduce it verbatim to
+> interoperate. If Charon ever versions this protocol, the leading slash
+> should be restored at that point.
 
 ## Exchange Pattern
 
@@ -263,7 +271,7 @@ The scoring algorithm ensures deterministic, fair prioritization:
 
 ## Interop Notes
 
-- **Protocol versioning**: The protocol ID `/charon/priority/2.0.0` identifies the version; future versions may use different IDs
+- **Protocol versioning**: The protocol ID `charon/priority/2.0.0` (note: no leading `/`, see warning above) identifies the version; future versions may use different IDs
 - **Signature algorithm**: Uses secp256k1 ECDSA signatures with recovery; public keys derived from libp2p peer IDs
 - **Hash function**: Uses SSZ (Simple Serialize) hashing over deterministic protobuf marshalling for message signing and priority deduplication
 - **Protobuf Any encoding**: Topics and priorities are encoded as protobuf `Any` types for flexibility; current implementation uses `structpb.StringValue` for both

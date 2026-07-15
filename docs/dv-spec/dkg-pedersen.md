@@ -57,7 +57,7 @@ Two-phase signed broadcast (summary):
 Reference
 
 - Generic mechanism: `docs/specs/reliable-broadcast.md`
-- Python models and helper: `dv_spec.subspecs.bcast`
+- Python models and helper: `dv_spec.subspecs.reliable_bcast`
 
 Properties provided
 

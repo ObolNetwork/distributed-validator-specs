@@ -17,7 +17,12 @@ from .message import (
 )
 
 # Protocol constants
-PROTOCOL_ID = "/charon/priority/2.0.0"
+# NOTE: Unlike every other protocol in this spec, the priority protocol ID
+# is missing its leading "/". This is a historical accident in Charon
+# (core/priority/prioritiser.go) that is now load-bearing: the string below
+# is what appears on the wire, and implementations (e.g. Pluto) must use it
+# verbatim to interoperate. Do not "fix" it here unless Charon changes it.
+PROTOCOL_ID = "charon/priority/2.0.0"
 MAX_PRIORITIES = 1000  # Maximum priorities per topic
 COUNT_WEIGHT = 1000  # Weight for peer count in scoring
 

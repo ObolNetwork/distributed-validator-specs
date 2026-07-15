@@ -121,7 +121,11 @@ The following protobuf definitions are used over the wire:
 
 - [dkg_sync.proto](../../proto/dkg_sync.proto) - DKG sync message definitions
 
-See the Python reference implementation: [`MsgSync`](../../src/dv_spec/subspecs/dkg_sync/message.py#L36-L76) and [`MsgSyncResponse`](../../src/dv_spec/subspecs/dkg_sync/message.py#L79-L97)
+See the Python reference implementation: [`MsgSync` and `MsgSyncResponse`](../../src/dv_spec/subspecs/dkg_sync/message.py)
+
+`MsgSync` also carries an optional `nickname` field (max 32 characters): a
+human-friendly peer name displayed to other operators during the ceremony.
+It is purely informational and MUST NOT affect protocol behavior.
 
 ## Ceremony Sequencing
 
@@ -213,6 +217,7 @@ Clients maintain a local step counter and send periodic `MsgSync` updates (~1 se
 - Current step number
 - Shutdown flag (false during ceremony)
 - Version string
+- Nickname (optional, max 32 characters; informational only)
 
 After completing each ceremony phase, the client increments its step counter and waits for the barrier to lift before proceeding. The server response timestamp allows RTT measurement for network monitoring.
 

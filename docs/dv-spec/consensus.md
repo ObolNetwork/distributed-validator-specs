@@ -64,13 +64,38 @@ leader_index = (duty.slot + duty.type + round) % n
 
 - Each round runs under a timer
 - On timeout, nodes trigger a round change and increment the round
-- Timer/backoff strategy is implementation-defined but must guarantee eventual progress
+- Timer/backoff strategy does not affect safety, but must guarantee eventual progress
+- The default strategy is the *eager double linear* timer: round `r` lasts
+  `r` seconds, and the first deadline of each round is computed
+  deterministically from the chain (`genesis_time + slot * slot_duration +
+  duty_start_delay + timeout`) rather than the local clock, so round
+  boundaries — and hence leader election — stay aligned across all peers.
+  The duty start delay is `slot_duration/3` for attestations,
+  `2*slot_duration/3` for aggregations and sync contributions, and `0`
+  otherwise. Implementations SHOULD match this strategy: a peer with
+  misaligned round deadlines degrades cluster liveness (it changes rounds,
+  and expects leaders, at the wrong times)
 
 See the Python reference implementation: [`RoundTimer`](../../src/dv_spec/subspecs/consensus/timer/timer.py).
+
+**Message limits:**
+
+Receivers MUST bound incoming consensus messages before expensive
+verification work (see `verify_msg_limits` and `MAX_CONSENSUS_MSG_SIZE` in
+the reference implementation):
+
+- Wire size: at most 32 MiB per message (enforced as a stream read limit)
+- Justifications: at most `2 * n` per message
+- Values: at most `2 * (justifications + 1)` per message
 
 **Decided messages:**
 
 `DECIDED` messages are optional since consensus is achieved upon quorum `COMMIT(r, V)`, however they can be used to help slow nodes catch up.
+
+After deciding, a node responds to any ROUND-CHANGE from a peer by
+rebroadcasting `DECIDED` (helping lagging peers catch up), rate-limited to at
+most one rebroadcast per source per strictly-increasing round and at most 16
+rebroadcasts per source in total, to prevent amplification abuse.
 
 ### Message Schemas
 

@@ -1,6 +1,6 @@
 from hashlib import sha256
 
-from dv_spec.subspecs.bcast import (
+from dv_spec.subspecs.reliable_bcast import (
     AnyMessage,
     BCastMessage,
     BCastSigRequest,

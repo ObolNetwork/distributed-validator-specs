@@ -157,3 +157,6 @@ uv.lock
 
 # Ruff
 .ruff_cache/
+
+# Local planning documents
+plans/

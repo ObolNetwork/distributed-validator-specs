@@ -4,7 +4,15 @@ Test suite for QBFT Message types and validation.
 This module contains tests for QBFT message.
 """
 
-from dv_spec.subspecs.consensus.qbft.message import MsgType, QBFTMsg
+import pytest
+
+from dv_spec.subspecs.consensus.qbft.message import (
+    MAX_CONSENSUS_MSG_SIZE,
+    MsgType,
+    QBFTConsensusMsg,
+    QBFTMsg,
+    verify_msg_limits,
+)
 from dv_spec.types import Duty, DutyType
 
 
@@ -167,3 +175,54 @@ class TestDutyType:
         assert DutyType.ATTESTER.name == "ATTESTER"
         assert DutyType.AGGREGATOR.name == "AGGREGATOR"
         assert DutyType.SYNC_MESSAGE.name == "SYNC_MESSAGE"
+
+
+class TestVerifyMsgLimits:
+    """Test consensus message justification/value count limits."""
+
+    def _make_msg(self, num_justifications: int, num_values: int) -> QBFTConsensusMsg:
+        """Build a consensus message with given justification/value counts."""
+        duty = Duty(slot=100, type=DutyType.ATTESTER)
+        msg = QBFTMsg(
+            type=MsgType.PRE_PREPARE,
+            duty=duty,
+            peer_idx=0,
+            round=1,
+            value_hash=b"\x01" * 32,
+            signature=b"0" * 65,
+        )
+        justification = [
+            QBFTMsg(
+                type=MsgType.ROUND_CHANGE,
+                duty=duty,
+                peer_idx=i % 4,
+                round=1,
+                signature=b"0" * 65,
+            )
+            for i in range(num_justifications)
+        ]
+        values = [bytes([i % 256]) for i in range(num_values)]
+        return QBFTConsensusMsg(msg=msg, justification=justification, values=values)
+
+    def test_max_consensus_msg_size(self) -> None:
+        """Test the wire size limit constant."""
+        assert MAX_CONSENSUS_MSG_SIZE == 32 * 1024 * 1024
+
+    def test_within_limits(self) -> None:
+        """Test messages within limits pass."""
+        # No justifications, one value: max values = 2 * (0 + 1) = 2
+        verify_msg_limits(self._make_msg(0, 2), nodes=4)
+        # Full quorum of round-changes plus prepares: 2 * 4 = 8 justifications
+        verify_msg_limits(self._make_msg(8, 18), nodes=4)
+
+    def test_too_many_justifications(self) -> None:
+        """Test justification count above 2*nodes is rejected."""
+        with pytest.raises(ValueError, match="too many justifications"):
+            verify_msg_limits(self._make_msg(9, 0), nodes=4)
+
+    def test_too_many_values(self) -> None:
+        """Test value count above 2*(justifications+1) is rejected."""
+        with pytest.raises(ValueError, match="too many values"):
+            verify_msg_limits(self._make_msg(0, 3), nodes=4)
+        with pytest.raises(ValueError, match="too many values"):
+            verify_msg_limits(self._make_msg(2, 7), nodes=4)

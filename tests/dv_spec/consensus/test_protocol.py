@@ -5,7 +5,11 @@ Test suite for QBFT Protocol implementation
 from dv_spec.subspecs.consensus.cryptography import hash_value
 from dv_spec.subspecs.consensus.qbft.definition import Definition
 from dv_spec.subspecs.consensus.qbft.message import MsgType, QBFTConsensusMsg, QBFTMsg
-from dv_spec.subspecs.consensus.qbft.protocol import QBFTConsensus, UponRule
+from dv_spec.subspecs.consensus.qbft.protocol import (
+    MAX_DECIDED_RESENDS,
+    QBFTConsensus,
+    UponRule,
+)
 from dv_spec.subspecs.consensus.qbft.transport import PeerInfo, Transport
 from dv_spec.types import Duty
 
@@ -1907,3 +1911,94 @@ class TestQBFTConsensus:
 
         # Verify the prepare messages are for the correct value and round
         assert all(m.msg.value_hash == hash_value(proposal_value) for m in prepare_responses[:4])
+
+
+class TestDecidedResendRateLimit:
+    """Test rate limiting of DECIDED rebroadcasts after consensus decided."""
+
+    def _make_decided_consensus(self) -> QBFTConsensus:
+        """Create a consensus instance that has already decided."""
+        duty = Duty(slot=100, type=1)
+        d = Definition(nodes=4)
+        proposal_value = b"test_block"
+        peers = create_test_peers(4)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
+        consensus = QBFTConsensus(
+            d=d, t=transport, duty=duty, peer=0, proposal_value=proposal_value
+        )
+        consensus.q_commit = [
+            QBFTMsg(
+                type=MsgType.COMMIT,
+                duty=duty,
+                peer_idx=i,
+                round=1,
+                signature=b"0" * 65,
+                value_hash=hash_value(proposal_value),
+            )
+            for i in range(3)
+        ]
+        return consensus
+
+    def _round_change(
+        self, consensus: QBFTConsensus, peer_idx: int, round_num: int
+    ) -> QBFTConsensusMsg:
+        """Build a ROUND-CHANGE message from a peer."""
+        return QBFTConsensusMsg(
+            msg=QBFTMsg(
+                type=MsgType.ROUND_CHANGE,
+                duty=consensus.duty,
+                peer_idx=peer_idx,
+                round=round_num,
+                signature=b"0" * 65,
+            ),
+            justification=[],
+            values=[],
+        )
+
+    def test_resend_on_new_round(self) -> None:
+        """Test a post-decision ROUND-CHANGE triggers a DECIDED rebroadcast."""
+        consensus = self._make_decided_consensus()
+
+        res = consensus.handle_message(self._round_change(consensus, 1, 2))
+        assert len(res) == 4
+        assert all(m.msg.type == MsgType.DECIDED for m in res)
+
+    def test_duplicate_round_not_resent(self) -> None:
+        """Test the same round from the same peer triggers only one rebroadcast."""
+        consensus = self._make_decided_consensus()
+
+        assert len(consensus.handle_message(self._round_change(consensus, 1, 2))) == 4
+        assert consensus.handle_message(self._round_change(consensus, 1, 2)) == []
+
+    def test_lower_round_not_resent(self) -> None:
+        """Test a lower round after a higher one does not trigger a rebroadcast."""
+        consensus = self._make_decided_consensus()
+
+        assert len(consensus.handle_message(self._round_change(consensus, 1, 5))) == 4
+        assert consensus.handle_message(self._round_change(consensus, 1, 3)) == []
+
+    def test_max_resends_per_peer(self) -> None:
+        """Test at most MAX_DECIDED_RESENDS rebroadcasts per peer."""
+        consensus = self._make_decided_consensus()
+
+        for i in range(MAX_DECIDED_RESENDS):
+            res = consensus.handle_message(self._round_change(consensus, 1, i + 2))
+            assert len(res) == 4
+
+        # The 17th strictly-increasing round is capped.
+        assert consensus.handle_message(self._round_change(consensus, 1, 100)) == []
+
+    def test_peers_tracked_independently(self) -> None:
+        """Test the rate limit is tracked per peer."""
+        consensus = self._make_decided_consensus()
+
+        assert len(consensus.handle_message(self._round_change(consensus, 1, 2))) == 4
+        assert consensus.handle_message(self._round_change(consensus, 1, 2)) == []
+        # A different peer at the same round still gets served.
+        assert len(consensus.handle_message(self._round_change(consensus, 2, 2))) == 4
+
+    def test_own_round_change_not_resent(self) -> None:
+        """Test our own ROUND-CHANGE does not trigger a rebroadcast."""
+        consensus = self._make_decided_consensus()
+
+        assert consensus.handle_message(self._round_change(consensus, 0, 2)) == []
