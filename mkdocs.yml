@@ -67,6 +67,8 @@ nav:
       - Cluster Edit Protocols: dv-spec/dkg-cluster-edits.md
       - DKG Sync: dv-spec/dkg-sync.md
       - Reliable Broadcast: dv-spec/reliable-broadcast.md
+  - Wire Format:
+      - Encoding and Hashing: dv-spec/hashing.md
   - Duty Workflow:
       - Duty Scheduling: dv-spec/duty-scheduling.md
       - ValidatorAPI: dv-spec/validatorapi.md

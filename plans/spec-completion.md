@@ -134,14 +134,113 @@ Also fixed in this pass:
 - The QBFT validation-rule list repeated one identical link on eight bullets.
   The module is linked once above the list and the bullets name the symbol.
 
-## Phase 3 — Conformance testing (subsequent sessions)
+## Phase 3 — Conformance testing
 
-1. **Spec-generated test vectors** (`test_vectors/`, JSON): QBFT message
-   hashing/signing (replace pluto's charon-generated
-   `crates/consensus/testdata/vectors/hashproto.json` as source of truth),
-   priority scoring, timer deadline tables (genesis, slot, duty type →
-   round deadlines), DKG transcripts, cluster lock hash/sig cases.
-   Publish as versioned release artifacts.
+1. **Spec-generated test vectors** (`test_vectors/`, JSON) — 5 suites done; the
+   cluster lock hash remains, see below.
+
+   Decisions (2026-07-28, Andrei): one JSON file per suite; vectors checked in as
+   fixtures rather than generated at release time.
+
+   Delivered:
+   - [x] **Canonical encoding and hashing implemented, not just described.** The
+     spec previously had a placeholder `SSZHasher` using Python's `hash()` —
+     process-randomised, so the spec's "deterministic hash root" was neither.
+     Now `src/dv_spec/encoding/{proto,ssz}.py`: deterministic proto3 encoding
+     and `hash_proto` (SSZ merkleization of the encoding). Doc page
+     `docs/dv-spec/hashing.md`. No new dependency: the encoder is explicit
+     rather than protoc-generated, which is what makes the three determinism
+     rules (field order, map key order, zero-value omission vs explicit
+     presence) auditable by a reader of the spec.
+   - [x] **QBFT signing root** (`subspecs/consensus/qbft/hashing.py`).
+     `transport._sign_message` was hashing `msg.model_dump()` — a Python dict —
+     and now uses the real signing root.
+   - [x] `test_vectors/qbft_hashing.json` — 25 cases, **all values produced by
+     charon** via `test_vectors/charon/hashproto_generator/main.go` (kept in-tree so
+     the goldens can be re-derived). Covers duties, `UnsignedDataSet`, QBFT
+     signing roots and `Any`-wrapped strings, including the edge cases that
+     break naive encoders. Five cases are the real beacon duty payloads from
+     pluto's `crates/consensus/testdata/vectors/hashproto.json` (charon v1.7.1),
+     so pluto can drop that file and depend on this suite instead — which was
+     the stated point of this item.
+   - [x] `test_vectors/priority_scoring.json` — 18 cases transcribed from
+     charon's own `TestCalculateResults` table, plus a new spec implementation
+     (`subspecs/priority/scoring.py`) that reproduces every expected score.
+     Priority previously had models but no scoring algorithm.
+   - [x] `test_vectors/timer_deadlines.json` — 216 cases in integer nanoseconds.
+   - [x] `tests/test_vectors.py` runs every suite; `scripts/generate_test_vectors.py`
+     regenerates the spec-computed suites; `test_vectors/README.md` documents the
+     format, provenance and how to reproduce the charon goldens.
+
+   Crypto dependency decision (2026-07-28, Andrei): `py_ecc` accepted — pure
+   Python is fine, the spec has no performance requirement. `eth-keys` with its
+   native (pure Python) backend covers secp256k1 and shares `py_ecc`'s
+   `eth-utils`/`eth-typing` base, so the two together added 9 packages and no
+   C build step.
+
+   Delivered on the back of that:
+   - [x] `src/dv_spec/crypto/{bls,secp256k1}.py`. BLS is the Ethereum scheme
+     `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`, which is what charon reaches
+     via Herumi `SetETHmode(EthModeLatest)`; py_ecc's `G2ProofOfPossession`
+     reproduces charon byte-for-byte.
+   - [x] `sigagg/aggregation.py` no longer declares BLS arithmetic out of scope:
+     `threshold_aggregate` (Lagrange in G2) and `recover_pubkey` (the same in G1)
+     are implemented, and `lagrange_coefficient` moved to `crypto/bls.py` so the
+     curve order has one definition.
+   - [x] The `Secp256k1Signer` placeholder that returned 65 zero bytes is gone.
+     `transport._sign_message` now produces real signatures.
+   - [x] `test_vectors/bls_threshold.json` — a fixed 3-of-4 sharing, charon's
+     public shares, partial signatures, and **four different quorums** whose
+     threshold aggregates must all equal the group signature. One quorum proves
+     nothing: wrong coefficients still yield a well-formed signature. Also pins
+     plain aggregation *not* verifying under the group key.
+   - [x] `test_vectors/secp256k1_signatures.json` — exact signature bytes, which
+     is possible because the RFC 6979 nonce makes signing deterministic. One
+     case signs the QBFT signing root from `qbft_hashing.json`, so the suites
+     chain.
+
+   Still outstanding:
+   - [ ] **Cluster lock hash / signature cases.** Bigger than it looks, and not
+     blocked on crypto: the spec has **no cluster definition or lock data model
+     at all** (only `docs/dv-spec/cluster-files.md`), and charon hashes them with
+     the full fastssz `HashWalker` API — `MerkleizeWithMixin`, explicit limits,
+     `PutUint64` — across 1025 lines of version-branched code in
+     `cluster/ssz.go`. Doing it needs (a) Pydantic models for Definition, Lock,
+     Operator, DistValidator and DepositData at v1.10, (b) extending
+     `encoding/ssz.py` with mixins and limits, (c) `hashDefinitionV1x10`,
+     `hashLockV1x3orLater` and `hashValidatorV1x8OrLater`. Only v1.10 is needed,
+     per the Phase 1 decision. This is its own unit of work, not a vector suite.
+   - [ ] **FROST DKG wire transcripts.** A ceremony's round 1 commitments depend
+     on each node's random polynomial, so a transcript is not reproducible
+     without forcing charon's RNG. `bls_threshold.json` covers what actually has
+     to match — the ceremony's *outputs* and their aggregation. A wire transcript
+     would need a seeded-RNG hook in charon; worth raising upstream rather than
+     working around here.
+
+   Publishing as versioned release artifacts is still outstanding, and depends on
+   the versioning policy under Aspirations.
+
+### Findings from doing the above
+
+Cross-checked against charon; each was verified by running charon's own code, not
+by reading it:
+
+- `QBFTMsg.value_hash`/`prepared_value_hash` are **always 32 bytes on the wire**,
+  zeros meaning "no value" — charon's `createMsg` passes `[32]byte` slices. A
+  sender that omitted an empty hash field would produce a signing root no
+  receiver can reproduce. `encode_qbft_msg` now emits both unconditionally.
+- **Map entry key/value fields have explicit presence**, unlike ordinary proto3
+  singular fields: an `UnsignedDataSet` entry with an empty value emits `0x1200`.
+- **An encoding of ≤32 bytes is not hashed at all** — `hash_proto` returns it
+  zero-padded. `Duty{slot: 1, type: 2}` "hashes" to `0x0801100200…00`.
+- Charon's priority result ordering documents a tie-break by lowest peer ID, but
+  implements it with Go's `slices.SortFunc`, which is **not stable**. It holds
+  only because Go's pdqsort falls back to insertion sort below 13 elements. The
+  spec sorts stably and documents the divergence risk.
+- The duty start delay is **integer division at nanosecond resolution**
+  (`time.Duration`), so a 5s slot (Gnosis Chain) gives an attester delay of
+  1666666666ns. The spec's float helper was silently 0.33ns off; there is now an
+  integer-nanosecond API and the vectors are normative in integers.
 2. **Consumer suites**: Go test package in charon + Rust test crate in pluto
    loading vectors from a pinned spec release. Catches charon regressions
    against its own documented protocol, not just pluto divergence.

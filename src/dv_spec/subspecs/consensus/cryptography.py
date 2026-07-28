@@ -6,14 +6,17 @@ including hashing, signing, and verification functions.
 """
 
 from abc import abstractmethod
-from typing import Any, Protocol
+from typing import Protocol
+
+from dv_spec.crypto import secp256k1
+from dv_spec.encoding.ssz import hash_proto
 
 
 class Hasher(Protocol):
     """Protocol for hash functions used in consensus."""
 
     @abstractmethod
-    def hash_value(self, value: Any) -> bytes:
+    def hash_value(self, value: bytes) -> bytes:
         """Hash a given value and return the digest as bytes."""
 
 
@@ -30,52 +33,37 @@ class Signer(Protocol):
 
 
 class SSZHasher:
-    """
-    This hasher uses Python's built-in hash function for simplicity.
+    """Hashes a consensus value by merkleizing its protobuf encoding."""
 
-    In a production system, use SSZ hashing.
-    """
+    def hash_value(self, value: bytes) -> bytes:
+        """Return the SSZ hash root of an already-encoded consensus value.
 
-    def hash_value(self, value: Any) -> bytes:
+        Callers pass the deterministic protobuf encoding of the value — for a
+        duty that is an `UnsignedDataSet`, see
+        `dv_spec.encoding.proto.encode_unsigned_data_set`. Encoding is the
+        caller's job because the value type varies by duty, while this hash does
+        not.
         """
-        This is a placeholder hash function.
-
-        In a production system, it should implement a deterministic ssz hash root
-        of the proto messages/values.
-        """
-        import json
-
-        if isinstance(value, dict):
-            # Convert dict to a deterministic string representation
-            value_str = json.dumps(value, sort_keys=True, default=str)
-            return hash(value_str).to_bytes(32, byteorder="big", signed=True)
-        return hash(value).to_bytes(32, byteorder="big", signed=True)
+        return hash_proto(value)
 
 
 class Secp256k1Signer:
-    """
-    Placeholder for a Secp256k1 signer.
-
-    In a production system, this should implement actual signing and recovery
-    using the secp256k1 curve.
-    """
+    """Signs consensus messages with the node's secp256k1 identity key."""
 
     def sign(self, message: bytes, private_key: bytes) -> bytes:
-        """Sign a message and return the 65 bytes signature."""
-        # TODO Implement actual signing using secp256k1
-        return b"\x00" * 65  # Placeholder for a 65-byte signature
+        """Sign a 32-byte signing root, returning 65 bytes of `R || S || V`."""
+        return secp256k1.sign(private_key, message)
 
     def recover(self, message: bytes, signature: bytes) -> bytes:
-        """Recover the public key for a given message and signature."""
-        # TODO Implement actual recovery using secp256k1
-        return b"public_key"
+        """Recover the compressed public key that signed a signing root."""
+        return secp256k1.recover(message, signature)
 
 
 # Default implementations
 default_hasher = SSZHasher()
 
 
-def hash_value(value: Any) -> bytes:
+def hash_value(value: bytes) -> bytes:
     """Default hash function for consensus values."""
     return default_hasher.hash_value(value)
 

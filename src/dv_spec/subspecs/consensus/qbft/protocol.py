@@ -8,7 +8,7 @@ based purely on message history and upon rules.
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from dv_spec.subspecs.consensus.cryptography import hash_value
 from dv_spec.subspecs.consensus.qbft.definition import Definition
@@ -67,8 +67,8 @@ class QBFTConsensus:
     peer: int
     """Index of this peer in the cluster."""
 
-    proposal_value: Any
-    """Proposal value for this node."""
+    proposal_value: bytes
+    """Proposal value for this node, as a deterministic protobuf encoding."""
 
     round: int = 1
     """Current round number."""
@@ -76,7 +76,7 @@ class QBFTConsensus:
     prepared_round: Optional[int] = None
     """Prepared round if any."""
 
-    prepared_value: Optional[Any] = None
+    prepared_value: Optional[bytes] = None
     """Prepared value if any."""
 
     prepared_value_hash: Optional[bytes] = None

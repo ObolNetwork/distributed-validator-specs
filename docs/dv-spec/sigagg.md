@@ -87,7 +87,11 @@ As a sanity check that holds for any index set, the coefficients sum to `1 mod r
 
 The same interpolation, applied in G1 to the `public_shares` of the cluster lock, must reconstruct the validator's aggregate public key. Lock verification checks exactly this for several threshold-sized subsets, which makes 1-based share indexing normative at cluster load time, before any duty is ever signed.
 
-See the Python reference implementation: [`lagrange_coefficient`, `aggregation_coefficients` and `select_aggregation_inputs`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/sigagg/aggregation.py).
+See the Python reference implementation: [`aggregation_coefficients` and `select_aggregation_inputs`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/sigagg/aggregation.py), and the group arithmetic in [`dv_spec.crypto.bls`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/crypto/bls.py).
+
+The signing scheme is `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_` — the Ethereum scheme, minimal-pubkey-size — so a partial signature is an ordinary validator signature under that node's key share. Secret keys and shares are big-endian 32-byte scalars.
+
+[`test_vectors/bls_threshold.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/bls_threshold.json) covers this with charon-generated values over a fixed 3-of-4 sharing. It aggregates **four different quorums** of the same sharing and requires all four to produce one signature: an implementation whose coefficients are subtly wrong still emits a well-formed signature, so a single quorum proves nothing. The suite also pins the failure mode below, asserting that the plain aggregate does *not* verify under the group public key.
 
 ### Threshold Aggregation Versus Plain Aggregation
 

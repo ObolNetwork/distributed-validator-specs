@@ -6,9 +6,10 @@ in distributed consensus systems.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
-from dv_spec.subspecs.consensus.cryptography import hash_value, sign
+from dv_spec.subspecs.consensus.cryptography import sign
+from dv_spec.subspecs.consensus.qbft.hashing import qbft_signing_root
 from dv_spec.subspecs.consensus.qbft.message import MsgType, QBFTConsensusMsg, QBFTMsg
 from dv_spec.types import Duty
 
@@ -36,8 +37,8 @@ class Transport:
     peers: List[PeerInfo]
     """List of peers in the consensus cluster."""
 
-    values: Dict[bytes, Any]
-    """Mapping of value hashes to their corresponding values."""
+    values: Dict[bytes, bytes]
+    """Consensus values (deterministic protobuf encodings) keyed by hash root."""
 
     def __init__(self, private_key: bytes, peers: List[PeerInfo]):
         """Initialize transport with private key and peer information."""
@@ -50,11 +51,11 @@ class Transport:
         """Number of peers in the cluster."""
         return len(self.peers)
 
-    def set_values(self, values: Dict[bytes, Any]) -> None:
+    def set_values(self, values: Dict[bytes, bytes]) -> None:
         """Set the mapping of value hashes to their corresponding values."""
         self.values.update(values)
 
-    def get_value(self, value_hash: bytes) -> Optional[Any]:
+    def get_value(self, value_hash: bytes) -> Optional[bytes]:
         """Retrieve the value corresponding to a given hash."""
         return self.values.get(value_hash, None)
 
@@ -63,11 +64,7 @@ class Transport:
         if msg.signature is not None:
             raise ValueError("Message should not have signature set before signing")
 
-        # Hash the message content (signature is None so it's excluded)
-        msg_hash = hash_value(msg.model_dump())
-
-        # Sign the hash
-        return sign(msg_hash, self.private_key)
+        return sign(qbft_signing_root(msg), self.private_key)
 
     def broadcast_message(
         self,

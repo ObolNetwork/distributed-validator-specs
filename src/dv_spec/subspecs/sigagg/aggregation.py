@@ -15,9 +15,7 @@ Scope
 
 Out of scope
 ------------
-- BLS group arithmetic and pairing checks. The spec pins the coefficients,
-  which is what implementations get wrong; the G2 arithmetic is delegated to a
-  BLS library.
+- The BLS group arithmetic itself; see `dv_spec.crypto.bls`.
 - Ethereum signing root and domain computation; see the ParSigEx spec.
 """
 
@@ -25,10 +23,17 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, Mapping, Sequence
 
+from dv_spec.crypto.bls import BLS_MODULUS, lagrange_coefficient
+
 from .threshold import PartialSignature
 
-BLS_MODULUS = 52435875175126190479447740508185965837690552500527637822603658699938581184513
-"""Order `r` of the BLS12-381 scalar field, the modulus for interpolation."""
+__all__ = [
+    "BLS_MODULUS",
+    "aggregation_coefficients",
+    "lagrange_coefficient",
+    "select_aggregation_inputs",
+    "verify_share_idx",
+]
 
 
 def verify_share_idx(share_idx: int, public_shares: Mapping[int, bytes]) -> bytes:
@@ -54,53 +59,6 @@ def verify_share_idx(share_idx: int, public_shares: Mapping[int, bytes]) -> byte
         raise ValueError(f"invalid shareIdx {share_idx}")
 
     return pubshare
-
-
-def lagrange_coefficient(index: int, indices: Sequence[int]) -> int:
-    """Compute the Lagrange interpolation coefficient for one share index.
-
-    The coefficient evaluates the interpolating polynomial at zero, where the
-    secret lives:
-
-        lambda_i = product over j != i of (0 - j) / (i - j)  (mod r)
-
-    Args:
-        index: The share index to compute the coefficient for.
-        indices: All share indices participating in the aggregation.
-
-    Returns:
-        The coefficient in `[0, BLS_MODULUS)`.
-
-    Raises:
-        ValueError: If `index` is not in `indices`, or `indices` contains
-            duplicates or a non-positive index.
-
-    Example:
-        >>> lagrange_coefficient(1, [1, 2, 3])
-        3
-        >>> lagrange_coefficient(3, [1, 2, 3])
-        1
-    """
-    if index not in indices:
-        raise ValueError(f"index {index} not among the aggregation indices")
-
-    if len(set(indices)) != len(indices):
-        raise ValueError("duplicate share index among the aggregation indices")
-
-    if any(other < 1 for other in indices):
-        raise ValueError("share indices are 1-based and must be positive")
-
-    coefficient = 1
-
-    for other in indices:
-        if other == index:
-            continue
-
-        numerator = -other % BLS_MODULUS
-        denominator = (index - other) % BLS_MODULUS
-        coefficient = coefficient * numerator * pow(denominator, -1, BLS_MODULUS) % BLS_MODULUS
-
-    return coefficient
 
 
 def aggregation_coefficients(indices: Sequence[int]) -> Dict[int, int]:

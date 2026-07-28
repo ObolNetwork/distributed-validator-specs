@@ -6,7 +6,7 @@ for distributed validators.
 """
 
 from enum import IntEnum
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
@@ -141,8 +141,12 @@ class QBFTConsensusMsg(BaseModel):
     justification: list[QBFTMsg] = Field(
         default_factory=list, description="Supporting messages proving validity of this message"
     )
-    values: list[Any] = Field(
-        default_factory=list, description="Actual consensus values referenced by value hashes"
+    values: list[bytes] = Field(
+        default_factory=list,
+        description=(
+            "Consensus values referenced by value hashes, as deterministic "
+            "protobuf encodings (Any-wrapped on the wire)"
+        ),
     )
 
 

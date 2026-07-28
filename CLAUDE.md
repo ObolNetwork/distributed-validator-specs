@@ -9,9 +9,13 @@ for distributed validator clusters in the Obol network.
 ## Key Directories
 
 - `src/dv_spec/` - Main distributed validator specifications and data structures
-- `src/dv_spec/subspecs/` - Reserved for future protocol subspecifications
+- `src/dv_spec/subspecs/` - Protocol subspecifications
 - `src/dv_spec/types/` - Ethereum-compatible base types (Uint64, Bytes32, etc.)
+- `src/dv_spec/encoding/` - Deterministic protobuf encoding and SSZ hashing
+- `src/dv_spec/crypto/` - BLS12-381 (py_ecc) and secp256k1 (eth-keys) signatures
 - `src/dv_spec/client/` - Client configuration examples
+- `test_vectors/` - Conformance fixtures published for implementers (JSON, one file per suite)
+- `scripts/` - Test vector generation
 - `tests/` - Specification tests
 - `docs/` - MkDocs documentation source
 
@@ -32,16 +36,16 @@ uv run pytest --cov=src/dv_spec --cov-report=html
 ### Code Quality Checks
 ```bash
 # Format code
-uv run ruff format src tests
+uv run ruff format src tests scripts
 
 # Check linting
-uv run ruff check src tests
+uv run ruff check src tests scripts
 
 # Fix fixable linting errors
-uv run ruff check --fix src tests
+uv run ruff check --fix src tests scripts
 
 # Type checking
-uv run mypy src tests
+uv run mypy src tests scripts
 
 # Run all quality checks (lint, typecheck, spellcheck)
 uv run tox -e all-checks
@@ -88,10 +92,11 @@ uv run tox
 |----------------------------------------|-------------------------------------|
 | Install dependencies                   | `uv sync --all-extras`              |
 | Run tests                              | `uv run pytest`                     |
-| Format code                            | `uv run ruff format src tests`      |
-| Lint code                              | `uv run ruff check src tests`       |
-| Fix lint errors                        | `uv run ruff check --fix src tests` |
-| Type check                             | `uv run mypy src tests`             |
+| Format code                            | `uv run ruff format src tests scripts` |
+| Lint code                              | `uv run ruff check src tests scripts` |
+| Fix lint errors                        | `uv run ruff check --fix src tests scripts` |
+| Type check                             | `uv run mypy src tests scripts`     |
+| Regenerate test vectors                | `uv run python scripts/generate_test_vectors.py` |
 | Build docs                             | `uv run mkdocs build`               |
 | Serve docs                             | `uv run mkdocs serve`               |
 | Run all quality checks (no tests/docs) | `uv run tox -e all-checks`          |
