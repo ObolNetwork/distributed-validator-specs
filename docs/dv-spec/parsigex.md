@@ -46,10 +46,10 @@ The exchange ensures that all nodes eventually have access to all partial signat
 
 The following protobuf definitions are used over the wire:
 
-- [parsigex.proto](../../proto/parsigex.proto) - ParSigEx message definitions
-- [core.proto](../../proto/core.proto) - Common core type definitions (Duty, ParSignedData, ParSignedDataSet)
+- [parsigex.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/parsigex.proto) - ParSigEx message definitions
+- [core.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/core.proto) - Common core type definitions (Duty, ParSignedData, ParSignedDataSet)
 
-See the Python reference implementation: [`ParSigExMsg`, `ParSignedData` and `ParSignedDataSet`](../../src/dv_spec/subspecs/parsigex/message.py), and [`Duty`](../../src/dv_spec/types/duty.py).
+See the Python reference implementation: [`ParSigExMsg`, `ParSignedData` and `ParSignedDataSet`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/parsigex/message.py), and [`Duty`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/types/duty.py).
 
 ## Protocol flow
 

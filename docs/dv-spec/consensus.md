@@ -76,7 +76,7 @@ leader_index = (duty.slot + duty.type + round) % n
   misaligned round deadlines degrades cluster liveness (it changes rounds,
   and expects leaders, at the wrong times)
 
-See the Python reference implementation: [`RoundTimer`](../../src/dv_spec/subspecs/consensus/timer/timer.py).
+See the Python reference implementation: [`RoundTimer`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/consensus/timer/timer.py).
 
 **Message limits:**
 
@@ -101,10 +101,10 @@ rebroadcasts per source in total, to prevent amplification abuse.
 
 The following protobuf definitions are used over the wire:
 
-- [consensus.proto](../../proto/consensus.proto) - QBFT consensus message definitions
-- [core.proto](../../proto/core.proto) - Common core type definitions (Duty, ParSignedData, etc.)
+- [consensus.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/consensus.proto) - QBFT consensus message definitions
+- [core.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/core.proto) - Common core type definitions (Duty, ParSignedData, etc.)
 
-See the Python reference implementation: [`MsgType`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L16-L23), [`QBFTMsg`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L26-L109), [`QBFTConsensusMsg`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L112-L120), and [`Duty`](../../src/dv_spec/types/duty.py#L27-L40).
+See the Python reference implementation: `MsgType`, `QBFTMsg` and `QBFTConsensusMsg` in [`qbft/message.py`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/consensus/qbft/message.py), and `Duty` in [`types/duty.py`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/types/duty.py).
 
 **Value carriage:**
 
@@ -131,22 +131,22 @@ Extra values MAY be included; order is irrelevant.
 
 ### Message Constraints
 
-See Python validation implementation: [`QBFTMsg`](../../src/dv_spec/subspecs/consensus/qbft/message.py)
+See the Python validation implementation in [`qbft/message.py`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/consensus/qbft/message.py) and [`types/duty.py`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/types/duty.py); the names in parentheses below are the symbols in those modules that implement each rule.
 
 **Validation rules (receivers MUST reject if any fails):**
 
 - `msg` and `msg.duty` are present
-- `msg.type` ∈ {1,...,5} (see [`MsgType`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L16-L23))
-- `duty.type` is valid (see [Duty Types](#duty-types))
-- `peer_idx` >= 0 (see [`validate_peer_idx`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L51-L56))
+- `msg.type` ∈ {1,...,5} (`MsgType`)
+- `duty.type` is valid (`DutyType`)
+- `peer_idx` >= 0 (`validate_peer_idx`)
 - `peer_idx` is a valid index in ordered peer list and maps to a known public key
-- `signature` is 65 bytes when present (R||S||V format) (see [`validate_signature`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L85-L90))
+- `signature` is 65 bytes when present (R||S||V format) (`validate_signature`)
 - Signature recovery matches the public key for `peer_idx`
-- `round` >= 1 (see [`validate_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L58-L63))
-- `prepared_round` >= 0; `0` indicates no preparation (null-prepared) (see [`validate_prepared_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L65-L83))
-- `prepared_round` <= `round` (see [`validate_prepared_round`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L65-L83))
-- `value_hash` is 32 bytes when non-zero (see [`validate_value_hash`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L92-L97))
-- `prepared_value_hash` must be zero hash if `prepared_round` is 0; must be non-zero hash if `prepared_round` > 0 (see [`validate_prepared_value_hash`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L99-L111))
+- `round` >= 1 (`validate_round`)
+- `prepared_round` >= 0; `0` indicates no preparation (null-prepared) (`validate_prepared_round`)
+- `prepared_round` <= `round` (`validate_prepared_round`)
+- `value_hash` is 32 bytes when non-zero (`validate_value_hash`)
+- `prepared_value_hash` must be zero hash if `prepared_round` is 0; must be non-zero hash if `prepared_round` > 0 (`validate_prepared_value_hash`)
 - `justification` is a flat list (nested justifications are rejected) with each object in `justification` having identical duty to `msg.duty`
 - For each referenced non-zero hash in `msg` or `justifications`, a matching value exists in `values` and re-hashes to that hash
 
@@ -154,7 +154,7 @@ See Python validation implementation: [`QBFTMsg`](../../src/dv_spec/subspecs/con
 
 All message types share these common requirements:
 
-- `type`: MUST be set to the appropriate [`MsgType`](../../src/dv_spec/subspecs/consensus/qbft/message.py#L16-L23)
+- `type`: MUST be set to the appropriate [`MsgType`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/consensus/qbft/message.py)
 - `duty`: MUST be present with valid `slot` and `type` fields
 - `peer_idx`: MUST be >= 0 and a valid index in the ordered peer list
 - `round`: MUST be >= 1

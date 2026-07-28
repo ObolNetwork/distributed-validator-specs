@@ -119,9 +119,9 @@ The sync protocol uses the following protocol ID for stream multiplexing:
 
 The following protobuf definitions are used over the wire:
 
-- [dkg_sync.proto](../../proto/dkg_sync.proto) - DKG sync message definitions
+- [dkg_sync.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/dkg_sync.proto) - DKG sync message definitions
 
-See the Python reference implementation: [`MsgSync` and `MsgSyncResponse`](../../src/dv_spec/subspecs/dkg_sync/message.py)
+See the Python reference implementation: [`MsgSync` and `MsgSyncResponse`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg_sync/message.py)
 
 `MsgSync` also carries an optional `nickname` field (max 32 characters): a
 human-friendly peer name displayed to other operators during the ceremony.

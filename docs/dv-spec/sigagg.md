@@ -65,7 +65,7 @@ Since `t = ceil(2n/3)` implies `2t > n`, two disjoint groups can never both reac
 
 **Signature duties.** Duties of type `DutySignature` (used by DKG partial signature exchanges, not by beacon chain duties) carry no message root, so all signatures for the duty form a single group.
 
-See the Python reference implementation: [`select_threshold_matching` and `store_partial_signature`](../../src/dv_spec/subspecs/sigagg/threshold.py).
+See the Python reference implementation: [`select_threshold_matching` and `store_partial_signature`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/sigagg/threshold.py).
 
 ## Aggregate Construction
 
@@ -87,7 +87,7 @@ As a sanity check that holds for any index set, the coefficients sum to `1 mod r
 
 The same interpolation, applied in G1 to the `public_shares` of the cluster lock, must reconstruct the validator's aggregate public key. Lock verification checks exactly this for several threshold-sized subsets, which makes 1-based share indexing normative at cluster load time, before any duty is ever signed.
 
-See the Python reference implementation: [`lagrange_coefficient`, `aggregation_coefficients` and `select_aggregation_inputs`](../../src/dv_spec/subspecs/sigagg/aggregation.py).
+See the Python reference implementation: [`lagrange_coefficient`, `aggregation_coefficients` and `select_aggregation_inputs`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/sigagg/aggregation.py).
 
 ### Threshold Aggregation Versus Plain Aggregation
 

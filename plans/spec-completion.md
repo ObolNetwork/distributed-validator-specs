@@ -109,6 +109,31 @@ Found by cross-checking against charon; all were wrong before this pass:
 - Line-anchored source links (`message.py#L86-L103`) replaced with plain file
   links in the pages that had them, since they silently rot.
 
+## Doc source links (DONE, follow-up pass)
+
+All 48 `../../src/...` and `../../proto/...` links resolved when browsing the
+repo but warned on `mkdocs build` and 404'd on the published site. Now absolute
+`https://github.com/ObolNetwork/distributed-validator-specs/blob/main/...`
+URLs, which work in both contexts. Since mkdocs cannot validate absolute URLs,
+the guardrails are:
+
+- `tests/test_docs_links.py` — every linked path must exist in the repo; no page
+  may reintroduce a `../../` escape or a `#L` line anchor.
+- `tox.ini` `docs-build` now runs `mkdocs build --strict`, so a relative escape
+  fails CI rather than printing a warning nobody reads.
+
+Also fixed in this pass:
+
+- `consensus.md` and `peerinfo.md` still carried the line anchors the note above
+  claims were removed; they are gone now.
+- Broken in-page anchors: `networking.md` `#Encodings` → `#encodings`;
+  `consensus.md` `#duty-types` pointed at a heading that does not exist on the
+  page and now links `DutyType` in `types/duty.py`.
+- `networking.md` linked `../../ssz/simple-serialize.md`, which resolves only
+  inside `ethereum/consensus-specs` (the page's origin). Now points upstream.
+- The QBFT validation-rule list repeated one identical link on eight bullets.
+  The module is linked once above the list and the bullets name the symbol.
+
 ## Phase 3 — Conformance testing (subsequent sessions)
 
 1. **Spec-generated test vectors** (`test_vectors/`, JSON): QBFT message
@@ -135,10 +160,6 @@ Found by cross-checking against charon; all were wrong before this pass:
   charon-Go, pluto-Rust state machines; compare outputs.
 - **Pluto link-back**: one-line PR to pluto README/AGENTS.md referencing this
   spec once Phase 1 lands ("read the spec; Go source is the reference impl").
-- **Doc source links**: every page links to `../../src/...` and `../../proto/...`,
-  which resolve when browsing on GitHub but warn on `mkdocs build` and 404 on the
-  published site. Either publish the source tree into the site or switch to
-  absolute GitHub URLs.
 - **Versioning policy**: tagged spec releases (`spec-v1.7.1`, `spec-v1.8.x`)
   mapped to charon MAJOR.MINOR so pluto's version-forward path has an
   artifact trail.

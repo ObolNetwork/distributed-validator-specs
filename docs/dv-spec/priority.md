@@ -89,10 +89,10 @@ Priority implements a two-phase request-response pattern:
 
 The following protobuf definitions are used over the wire:
 
-- [priority.proto](../../proto/priority.proto) - Priority protocol message definitions
-- [core.proto](../../proto/core.proto) - Common core type definitions (Duty)
+- [priority.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/priority.proto) - Priority protocol message definitions
+- [core.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/core.proto) - Common core type definitions (Duty)
 
-See the Python reference implementation: [`PriorityMsg`, `PriorityTopicProposal`, `PriorityResult`, `PriorityTopicResult` and `PriorityScoredResult`](../../src/dv_spec/subspecs/priority/message.py), and [`Duty`](../../src/dv_spec/types/duty.py).
+See the Python reference implementation: [`PriorityMsg`, `PriorityTopicProposal`, `PriorityResult`, `PriorityTopicResult` and `PriorityScoredResult`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/priority/message.py), and [`Duty`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/types/duty.py).
 
 ## Protocol Flow
 

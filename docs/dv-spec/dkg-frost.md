@@ -54,16 +54,16 @@ Every participant feeds a context string into FROST key generation, binding the 
 ctx = "0x" + hex(definition_hash)
 ```
 
-A mismatched context makes the ceremony fail rather than silently produce diverging keys. See [`frost_dkg_context`](../../src/dv_spec/subspecs/dkg/frost.py).
+A mismatched context makes the ceremony fail rather than silently produce diverging keys. See [`frost_dkg_context`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/frost.py).
 
 ## Message Schemas
 
 The following protobuf definitions are used over the wire:
 
-- [frost.proto](../../proto/frost.proto) — FROST round 1 and round 2 message definitions
-- [nodesigs.proto](../../proto/nodesigs.proto) — node signature exchange
+- [frost.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/frost.proto) — FROST round 1 and round 2 message definitions
+- [nodesigs.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/nodesigs.proto) — node signature exchange
 
-See the Python reference implementation: [`dv_spec.subspecs.dkg.frost`](../../src/dv_spec/subspecs/dkg/frost.py) and [`dv_spec.subspecs.dkg.node_sigs`](../../src/dv_spec/subspecs/dkg/node_sigs.py).
+See the Python reference implementation: [`dv_spec.subspecs.dkg.frost`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/frost.py) and [`dv_spec.subspecs.dkg.node_sigs`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/node_sigs.py).
 
 Every payload carries a `FrostMsgKey`:
 
@@ -144,7 +144,7 @@ Per validator index, in ascending order, a successful ceremony yields:
 - `secret_share`: this node's private share (32-byte scalar), taken from the local FROST instance
 - `public_shares`: map from 1-based `ShareIdx` to that node's `vk_share`, collected from the round 2 casts including this node's own
 
-This is the same artifact a Pedersen ceremony produces; see [`dv_spec.subspecs.dkg.share`](../../src/dv_spec/subspecs/dkg/share.py) and [`assemble_validator_shares`](../../src/dv_spec/subspecs/dkg/frost.py).
+This is the same artifact a Pedersen ceremony produces; see [`dv_spec.subspecs.dkg.share`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/share.py) and [`assemble_validator_shares`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/frost.py).
 
 ## Interop Notes
 

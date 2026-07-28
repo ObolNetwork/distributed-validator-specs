@@ -79,7 +79,7 @@ Lookups are **by slot, not by recency**: the result that governs a slot is the n
 
 **Protocols.** Resolved from the `protocol` topic of the result governing the slot, falling back to the node's own local protocol list before the first agreement.
 
-See the Python reference implementation: [`dv_spec.subspecs.infosync`](../../src/dv_spec/subspecs/infosync/infosync.py).
+See the Python reference implementation: [`dv_spec.subspecs.infosync`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/infosync/infosync.py).
 
 ## Interop Notes
 

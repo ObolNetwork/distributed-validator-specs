@@ -92,9 +92,9 @@ Notes:
 
 The following protobuf definitions are used over the wire:
 
-- [pedersen.proto](../../proto/pedersen.proto) - Pedersen DKG message definitions
+- [pedersen.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/pedersen.proto) - Pedersen DKG message definitions
 
-See the Python reference implementation: [`dv_spec.subspecs.dkg.pedersen`](../../src/dv_spec/subspecs/dkg/pedersen.py), covering `NodePubKeyMessage`, `ValidatorPubKeyShareMessage`, `PedersenDealBundle`, `PedersenResponseBundle`, and `PedersenJustificationBundle`.
+See the Python reference implementation: [`dv_spec.subspecs.dkg.pedersen`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/pedersen.py), covering `NodePubKeyMessage`, `ValidatorPubKeyShareMessage`, `PedersenDealBundle`, `PedersenResponseBundle`, and `PedersenJustificationBundle`.
 
 ## Ceremony Sequencing
 
@@ -124,7 +124,7 @@ See the Python reference implementation: [`dv_spec.subspecs.dkg.pedersen`](../..
    - Nodes collect the announced shares and build the `public_shares` map ordered by share index (1-based).
 
 4. Output artifacts
-   - For each validator, the resulting artifact is the same one a FROST run produces (see [`dv_spec.subspecs.dkg.share`](../../src/dv_spec/subspecs/dkg/share.py)):
+   - For each validator, the resulting artifact is the same one a FROST run produces (see [`dv_spec.subspecs.dkg.share`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/share.py)):
      - validator_pubkey: aggregate validator public key (48-byte compressed G1)
      - secret_share: this node's private share (32-byte scalar)
      - public_shares: map[int->bytes], share indices 1..n for the nodes that will remain after resharing

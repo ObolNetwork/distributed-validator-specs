@@ -121,7 +121,7 @@ The replacement takes the departing operator's **position**, inheriting its shar
 
 The departing operator does not take part. The replacement is treated as an added peer and the departing operator as a removed peer within the same reshare.
 
-See the Python reference implementation: [`dv_spec.subspecs.dkg.protocols`](../../src/dv_spec/subspecs/dkg/protocols.py).
+See the Python reference implementation: [`dv_spec.subspecs.dkg.protocols`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/protocols.py).
 
 ## Appending Validators
 

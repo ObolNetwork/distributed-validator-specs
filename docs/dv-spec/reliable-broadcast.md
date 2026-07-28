@@ -37,9 +37,9 @@ The following message topics are appended to the prefix when routing on libp2p:
 
 The following protobuf definitions are used over the wire:
 
-- [bcast.proto](../../proto/bcast.proto) - Reliable broadcast message definitions
+- [bcast.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/bcast.proto) - Reliable broadcast message definitions
 
-See the Python reference implementation: [`AnyMessage`, `BCastSigRequest`, `BCastSigResponse`, and `BCastMessage`](../../src/dv_spec/subspecs/reliable_bcast/reliable_broadcast.py).
+See the Python reference implementation: [`AnyMessage`, `BCastSigRequest`, `BCastSigResponse`, and `BCastMessage`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/reliable_bcast/reliable_broadcast.py).
 
 > **Naming note**: This component lives in Charon at `dkg/bcast` and its
 > protocol ID is `/charon/dkg/bcast/1.0.0`. It is **not** the same component
