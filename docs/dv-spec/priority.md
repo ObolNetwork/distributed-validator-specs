@@ -6,6 +6,8 @@ This document describes the Priority protocol used for achieving cluster-wide co
 
 The Priority protocol enables distributed validator nodes to reach cluster-wide consensus on ordered preference lists. This is essential for coordinating behavior across independent nodes that may have different capabilities, versions, or configurations.
 
+This document specifies the generic mechanism. Its one production use is [InfoSync](infosync.md), which defines the concrete topics, the trigger cadence, and how the agreed result selects the cluster's consensus protocol.
+
 ### Use Cases
 
 Distributed validators are composed of multiple independent nodes that need to coordinate on shared preferences. For example:
@@ -90,7 +92,7 @@ The following protobuf definitions are used over the wire:
 - [priority.proto](../../proto/priority.proto) - Priority protocol message definitions
 - [core.proto](../../proto/core.proto) - Common core type definitions (Duty)
 
-See the Python reference implementation: [`PriorityMsg`](../../src/dv_spec/subspecs/priority/message.py#L35-L48), [`PriorityTopicProposal`](../../src/dv_spec/subspecs/priority/message.py#L20-L32), [`PriorityResult`](../../src/dv_spec/subspecs/priority/message.py#L86-L96), [`PriorityTopicResult`](../../src/dv_spec/subspecs/priority/message.py#L72-L83), [`PriorityScoredResult`](../../src/dv_spec/subspecs/priority/message.py#L51-L60), and [`Duty`](../../src/dv_spec/types/duty.py#L27-L40).
+See the Python reference implementation: [`PriorityMsg`, `PriorityTopicProposal`, `PriorityResult`, `PriorityTopicResult` and `PriorityScoredResult`](../../src/dv_spec/subspecs/priority/message.py), and [`Duty`](../../src/dv_spec/types/duty.py).
 
 ## Protocol Flow
 

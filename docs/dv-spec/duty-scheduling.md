@@ -5,7 +5,7 @@ This document describes how distributed validators schedule and execute beacon c
 Scope:
 
 - Slot and epoch time calculations
-- Duty resolution from Bbeacon node
+- Duty resolution from the beacon node
 - Deadline computation and duty gating logic
 - Epoch-based caching and memory management
 - Slot offset scheduling for different duty types
@@ -96,6 +96,25 @@ sync_contribution_offset = slot_duration * 2 / 3
 - **Aggregations**: Wait 8 seconds for individual messages to arrive before aggregating
 - **Proposals**: Must start immediately to maximize time for block creation, signing, and propagation
 
+### Slot Offsets Feed the Consensus Round Timer
+
+These offsets are not local to the scheduler. The [QBFT](consensus.md) eager double linear round timer derives its first-round deadline from the slot start time plus the **same** duty offset:
+
+```
+slot_start   = genesis_time + slot * slot_duration
+duty_start   = slot_start + slot_offset(duty_type)
+deadline(r)  = duty_start + linear_round_timeout(r)
+```
+
+The offsets used there are identical to the table above — `1/3` for attester, `2/3` for aggregator and sync contribution, `0` for everything else — precisely so that round deadlines line up with when consensus actually starts.
+
+Two consequences follow, and both are interop-critical:
+
+- Deadlines are derived from genesis time and the slot number, not from each node's local `now()`. Every node therefore computes the same absolute deadline for a given (slot, duty, round), independent of when it started its instance. A node that measures from local arrival time drifts out of round alignment with its peers, and the divergence grows with each round change.
+- Changing a slot offset in the scheduler without changing it in the timer misaligns round deadlines by that difference. The two tables are one table.
+
+An implementation that has not yet obtained genesis time and slot duration falls back to local-clock deadlines. That fallback is not interoperable and is only intended for tests.
+
 ## Duty Deadlines
 
 Each duty type has a deadline after which rewards are severely diminished or zero.
@@ -150,10 +169,13 @@ This ensures validators don't attest or propose based on stale fork choice.
 
 ## Builder Registration
 
-For validators using MEV-boost, builder registrations must be submitted at the start of each epoch:
+For validators using the builder API, the DV submits builder registrations itself rather than relaying the VC's — see the [ValidatorAPI conformance checklist](validatorapi.md#conformance-checklist), where `register_validator` is accepted and discarded. The registrations are pre-generated and signed by the whole cluster during the [DKG](dkg-frost.md) and stored in the [cluster lock](cluster-files.md), so no signing is needed at submission time.
 
-1. Get pre-signed builder registration for each active validator, found in the cluster lock
-2. Submit registrations to beacon node via `/eth/v1/validator/prepare_beacon_proposer`
-3. Handle independently of duty scheduling (typically once per epoch)
+Submission rules:
 
-This allows validators to receive MEV blocks when assigned proposer duties.
+1. Only when the builder API is enabled.
+2. At slot 0 of each epoch, and at most once per epoch — a successful submission records the epoch, and a failed one is retried at the next epoch boundary.
+3. Delayed to 3/4 into that slot, and performed asynchronously, so it neither collides with duty triggering nor adds beacon node load at the slot boundary.
+4. Take the pre-signed registration for each active validator from the cluster lock and submit them to `POST /eth/v1/validator/register_validator` on the beacon node.
+
+This is independent of duty scheduling: registrations are not duties, have no deadline, and are not routed through consensus.

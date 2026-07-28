@@ -1,6 +1,6 @@
 # Spec Completion Plan
 
-Status as of 2026-07-16. Goal: make this repo a formal spec of the Obol DV
+Status as of 2026-07-28. Goal: make this repo a formal spec of the Obol DV
 protocol (as implemented by charon) precise enough that pluto is assured of
 perfect interop with charon.
 
@@ -12,12 +12,16 @@ Context anchors:
 - Known normative quirk: priority protocol ID is `charon/priority/2.0.0`
   (no leading slash) — accidental in charon, accommodated by pluto, now
   documented in this spec. Do not "fix" unless charon versions the protocol.
+  (An unmerged charon branch `pinebit/fix-priority-slash` adds the slash with a
+  legacy alias; the spec stays on the no-slash form until that lands on main.)
 
 ## Phase 1 — Un-stale (DONE, this PR)
 
-- [x] `MsgSync.nickname` field 6 (charon #4105, in v1.9.5)
+- [x] `MsgSync.nickname` field 6 (charon #4105, in v1.9.0 — commit `d33572f2`
+      is an ancestor of the v1.9.0 tag)
 - [x] Deterministic genesis/slot-derived deadlines + duty start delay in
-      `DoubleEagerLinearRoundTimer` (charon #4243, in v1.9.5)
+      `DoubleEagerLinearRoundTimer` (charon #4243, in v1.9.0 — commit
+      `31ff2996` is an ancestor of the v1.9.0 tag)
 - [x] QBFT hardening (charon #4557, in v1.11.0): DECIDED-resend rate limit
       (16/source, strictly-increasing round), `MAX_CONSENSUS_MSG_SIZE` (32 MiB),
       `verify_msg_limits` (justifications ≤ 2n, values ≤ 2(j+1))
@@ -29,34 +33,81 @@ Context anchors:
 - [ ] Deliberately skipped: cluster definition doc stays at v1.10 (per Oisín,
       v1.10 is the target for now; charon is on v1.11 — revisit later)
 
-## Phase 2 — Close interop-critical gaps (next commit / next session)
+## Phase 2 — Close interop-critical gaps (DONE except item 7)
 
 Priority order:
 
-1. **FROST DKG** (top priority — pluto's near-term DKG target, and charon's
-   default scheme; the spec currently only covers opt-in Pedersen):
-   - Protocol ID `/charon/dkg/frost/2.0.0/` (note trailing slash)
-   - Executable message models mirroring `dkg/dkgpb/v1/frost.proto`
-     (round 1/round 2 casts, share exchange)
-   - Flow spec from charon `dkg/frost.go` + `dkg/frostp2p.go`
-     (`runFrostParallel`)
-   - Node signature exchange: `/charon/dkg/node_sig` (`dkg/nodesigs.go`)
-   - Doc page `docs/dv-spec/dkg-frost.md`; mark Pedersen as the non-default
-     alternative in README/docs
-2. **sigagg**: BLS threshold aggregation spec — partial sig verification
-   rules, parsigdb threshold trigger, aggregate construction
-   (`core/sigagg`, `tbls`)
-3. **infosync**: the actual use of the priority protocol — topics
-   (version/protocol/proposal), how the result selects the cluster-wide
-   consensus protocol (`core/infosync`). Pluto needs this for its
-   ConsensusController work (pluto issue #402 part B)
-4. **DKG reshare / add / remove / replace operator flows**
-   (`dkg/protocol_*.go`) — wire-visible, growing surface
-5. **validatorapi conformance**: endpoint-by-endpoint behavior deltas vs a
-   plain beacon node (what charon intercepts/rewrites/aggregates)
-6. Prose specs: scheduler duty timing (slot offsets feed the timer spec),
-   core/bcast (beacon broadcast + recast)
-7. Cluster definition v1.11 (when we move the target past v1.10)
+1. [x] **FROST DKG** (top priority — pluto's near-term DKG target, and charon's
+   default scheme; the spec previously only covered opt-in Pedersen):
+   - [x] Protocol IDs. Correction to the original plan note: charon builds these
+     with `path.Join("/charon/dkg/frost/2.0.0/", suffix)`, which **normalises
+     away the trailing slash**. The wire values are
+     `/charon/dkg/frost/2.0.0/{round1/cast,round1/p2p,round2/cast}`, verified by
+     running `path.Join`. Also note the two `cast` IDs are *bcast message IDs*,
+     not libp2p protocol IDs — only `round1/p2p` has a stream handler.
+   - [x] Executable message models mirroring `dkg/dkgpb/v1/frost.proto`
+     (`subspecs/dkg/frost.py`, `proto/frost.proto`), plus receiver-side
+     validation rules, round completion counts, and output assembly
+   - [x] Flow spec from charon `dkg/frost.go` + `dkg/frostp2p.go`
+     (`runFrostParallel`), incl. the DKG context string `"0x" + hex(defhash)`
+   - [x] Node signature exchange `/charon/dkg/node_sig` (`subspecs/dkg/node_sigs.py`,
+     `proto/nodesigs.proto`) — unversioned ID, `0xdeadbeef` sentinel
+   - [x] Doc page `docs/dv-spec/dkg-frost.md`; Pedersen marked as the
+     non-default alternative in README/docs
+   - [x] Renamed `subspecs/dkg/message.py` → `pedersen.py` and extracted the
+     shared output artifact to `subspecs/dkg/share.py` (mirrors charon
+     `dkg/share`), since both algorithms produce it
+2. [x] **sigagg**: `subspecs/sigagg/` + `docs/dv-spec/sigagg.md` — partial sig
+   verification rules, the exact parsigdb threshold trigger (group by message
+   root, `== threshold` so it fires exactly once), Lagrange aggregate
+   construction over 1-based share indices, and the distinction between
+   threshold aggregation (duties, deposit data, registrations) and plain
+   aggregation (lock hash multi-signature)
+3. [x] **infosync**: `subspecs/infosync/` + `docs/dv-spec/infosync.md` — the
+   three topics, last-slot-of-epoch trigger, local ordering rules (lock
+   preference then CLI config), slot-keyed result lookup, and consensus
+   protocol selection by `/charon/consensus/` prefix
+4. [x] **DKG reshare / add / remove / replace operator flows**:
+   `subspecs/dkg/protocols.py` + `docs/dv-spec/dkg-cluster-edits.md` — the
+   shared 4-step framework, the departing-operator variant, participant sets,
+   threshold override bounds, and the ceremony-gapped vs new-lock-compacted
+   share index distinction. Concrete step numbering for both ceremony types
+   added to `docs/dv-spec/dkg-sync.md`
+5. [x] **validatorapi conformance**: full endpoint-by-endpoint delta table in
+   `docs/dv-spec/validatorapi.md`, generated from `core/validatorapi/router.go`
+6. [x] Prose specs: scheduler slot offsets and their link to the consensus round
+   timer (`docs/dv-spec/duty-scheduling.md`), and beacon broadcast
+   (`docs/dv-spec/broadcast.md`). Note: `core/bcast` **recast** no longer exists
+   in charon — builder registrations are now submitted by the scheduler, which
+   is what the duty-scheduling doc now describes.
+7. [ ] Cluster definition v1.11 — still deferred; v1.10 remains the target per
+   Oisín (see Phase 1 note).
+
+### Corrections made to existing specs while doing the above
+
+Found by cross-checking against charon; all were wrong before this pass:
+
+- `ParSignedData.share_idx` was documented and constrained as 0-based. It is
+  **1-based** (`PeerIdx + 1`) and is the Lagrange evaluation point, so this was
+  interop-fatal. Model constraint, description and tests updated.
+- `DutyType.BUILDER_REGISTRATION` was marked deprecated. Only
+  `BUILDER_PROPOSER` is (by v3 block proposals).
+- validatorapi doc listed `POST /eth/v1/beacon/blocks` and
+  `/eth/v1/beacon/blinded_blocks` as 404 — both are handled. It also omitted
+  the endpoints that *are* 404 (`/eth/v1/beacon/pool/attestations`,
+  `/eth/v2/validator/blocks/{slot}`), and listed
+  `/eth/v1/beacon/states/{state_id}/validators` as proxied when it is
+  intercepted for pubkey translation.
+- duty-scheduling doc said builder registrations are submitted via
+  `prepare_beacon_proposer`; they go to `register_validator`, at slot 0 of each
+  epoch, delayed to 3/4 into the slot, at most once per epoch.
+- `mkdocs.yml` nav pointed at a non-existent `specs/pedersen-dkg.md` and omitted
+  every real spec page; now a complete grouped nav.
+- `tox.ini` default `env_list` ran `mkdocs serve`, so the documented
+  "run everything" command (`uv run tox`) could never terminate. Now uses
+  `docs-build`.
+- Line-anchored source links (`message.py#L86-L103`) replaced with plain file
+  links in the pages that had them, since they silently rot.
 
 ## Phase 3 — Conformance testing (subsequent sessions)
 
@@ -84,6 +135,10 @@ Priority order:
   charon-Go, pluto-Rust state machines; compare outputs.
 - **Pluto link-back**: one-line PR to pluto README/AGENTS.md referencing this
   spec once Phase 1 lands ("read the spec; Go source is the reference impl").
+- **Doc source links**: every page links to `../../src/...` and `../../proto/...`,
+  which resolve when browsing on GitHub but warn on `mkdocs build` and 404 on the
+  published site. Either publish the source tree into the site or switch to
+  absolute GitHub URLs.
 - **Versioning policy**: tagged spec releases (`spec-v1.7.1`, `spec-v1.8.x`)
   mapped to charon MAJOR.MINOR so pluto's version-forward path has an
   artifact trail.

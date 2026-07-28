@@ -27,7 +27,13 @@ class ParSignedData(BaseModel):
         description="Serialized SignedData (duty-type specific, e.g., attestation, block proposal)"
     )
     signature: bytes = Field(description="BLS signature share (96 bytes, compressed G2 point)")
-    share_idx: int = Field(ge=0, description="Operator index (0-based in protocol)")
+    share_idx: int = Field(
+        ge=1,
+        description=(
+            "Signer's share index: 1-based, equal to its 0-based peer index plus one. "
+            "Used as the Lagrange evaluation point during threshold aggregation."
+        ),
+    )
 
 
 class ParSignedDataSet(BaseModel):

@@ -28,8 +28,8 @@ targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
 
 | Behavior | First Charon release |
 | ------------------------------------------------------------------ | -------------------- |
-| `MsgSync.nickname` field (DKG sync)                                 | `v1.9.5`             |
-| Deterministic (genesis-derived) eager double linear round deadlines | `v1.9.5`             |
+| `MsgSync.nickname` field (DKG sync)                                 | `v1.9.0`             |
+| Deterministic (genesis-derived) eager double linear round deadlines | `v1.9.0`             |
 | Linear round timer subsequent-round timeout fix                     | `v1.11.0`            |
 | QBFT DECIDED-resend rate limit and message size/count limits        | `v1.11.0`            |
 
@@ -43,14 +43,19 @@ Interoperability specs and reference models:
 
 - **[Consensus (QBFT)](docs/dv-spec/consensus.md)**: QBFT consensus protocol for reaching agreement among distributed validator nodes
 - **[Partial Signature Exchange (ParSigEx)](docs/dv-spec/parsigex.md)**: Protocol for exchanging partially signed duty data among distributed validator nodes
+- **[Signature Aggregation (SigAgg)](docs/dv-spec/sigagg.md)**: Threshold trigger and BLS threshold aggregation of partial signatures into the group signature
 - **[Peer Information (PeerInfo)](docs/dv-spec/peerinfo.md)**: Protocol for exchanging node metadata and monitoring cluster health
-- **[Pedersen DKG](docs/dv-spec/dkg-pedersen.md)**: Distributed key generation protocol for generating and resharing BLS validator keys
+- **[FROST DKG](docs/dv-spec/dkg-frost.md)**: The default distributed key generation protocol for generating BLS validator keys
+- **[Pedersen DKG](docs/dv-spec/dkg-pedersen.md)**: The opt-in alternative DKG algorithm, selected with `dkg_algorithm: pedersen`
+- **[Cluster Edit Protocols](docs/dv-spec/dkg-cluster-edits.md)**: Reshare, add, remove and replace operators on an existing cluster
 - **[DKG Sync](docs/dv-spec/dkg-sync.md)**: Synchronization protocol to coordinate distributed key generation ceremonies between nodes
 - **[Reliable Broadcast](docs/dv-spec/reliable-broadcast.md)**: Two-phase signed broadcast component to prevent equivocation in DKG protocols
 - **[Cluster Files](docs/dv-spec/cluster-files.md)**: File formats for cluster definition and lock files
 - **[ValidatorAPI](docs/dv-spec/validatorapi.md)**: Reverse proxy and middleware layer between validator clients and beacon nodes
+- **[Beacon Broadcast](docs/dv-spec/broadcast.md)**: Submitting aggregated signed duty data to the beacon node
 - **[Duty Scheduling](docs/dv-spec/duty-scheduling.md)**: Protocol for scheduling and executing beacon chain duties including slot timing and deadline calculation
 - **[Priority](docs/dv-spec/priority.md)**: Protocol for achieving cluster-wide consensus on ordered preference lists
+- **[InfoSync](docs/dv-spec/infosync.md)**: Cluster-wide agreement on versions, protocols and proposal types; selects the consensus protocol
 - **Types and primitives**: Base types and helpers used by the specs
 - **Tests and docs**: Verification and documentation for implementers
 
@@ -97,24 +102,31 @@ uv run pytest
 │       ├── subspecs/                # Protocol implementations
 │       │   ├── reliable_bcast/      # Reliable broadcast (charon's dkg/bcast)
 │       │   ├── consensus/           # QBFT consensus
-│       │   ├── dkg/                 # Pedersen DKG
+│       │   ├── dkg/                 # FROST and Pedersen DKG, node signatures
 │       │   ├── dkg_sync/            # DKG synchronization
+│       │   ├── infosync/            # Cluster-wide capability agreement
 │       │   ├── parsigex/            # Partial signature exchange
 │       │   ├── peerinfo/            # Peer info
-│       │   └── priority/            # Priority protocol
+│       │   ├── priority/            # Priority protocol
+│       │   └── sigagg/              # Threshold signature aggregation
 │       └── types/                   # Ethereum-compatible base types
 ├── tests/                           # Test suite
 └── docs/
     ├── dv-spec/                     # Protocol specifications
+    │   ├── broadcast.md             # Submitting aggregated duty data to the beacon node
     │   ├── cluster-files.md         # File formats for cluster definition and lock files
     │   ├── consensus.md             # QBFT consensus protocol for reaching agreement
-    │   ├── dkg-pedersen.md          # Pedersen DKG for generating and resharing BLS keys
+    │   ├── dkg-cluster-edits.md     # Reshare, add, remove and replace operators
+    │   ├── dkg-frost.md             # FROST DKG, the default key generation algorithm
+    │   ├── dkg-pedersen.md          # Pedersen DKG, the opt-in alternative algorithm
     │   ├── dkg-sync.md              # Synchronization protocol for DKG ceremonies
     │   ├── duty-scheduling.md       # Scheduling and executing beacon chain duties
+    │   ├── infosync.md              # Cluster-wide capability agreement and protocol selection
     │   ├── parsigex.md              # Partial signature exchange protocol
     │   ├── peerinfo.md              # Node metadata exchange and cluster health monitoring
     │   ├── priority.md              # Cluster-wide consensus on ordered preference lists
     │   ├── reliable-broadcast.md    # Two-phase broadcast to prevent equivocation
+    │   ├── sigagg.md                # Threshold trigger and BLS threshold aggregation
     │   └── validatorapi.md          # Reverse proxy and middleware for VC-BN interaction
     └── client/                      # Additional client documentation
 ```

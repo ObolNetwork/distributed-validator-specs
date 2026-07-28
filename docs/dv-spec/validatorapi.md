@@ -33,7 +33,7 @@ Validator 2 (DV Root Key: 0xdef...):
   - Node 3 share: 0x666...
 ```
 
-This mapping is configured during [DKG](pedersen-dkg.md) and stored in the [cluster lock file](cluster-files.md), with each node knowing:
+This mapping is configured during [DKG](dkg-frost.md) and stored in the [cluster lock file](cluster-files.md), with each node knowing:
 
 - All DV root public keys for every validator in the cluster
 - This node's public share for each validator (based on node index)
@@ -280,28 +280,87 @@ ValidatorAPI intercepts and handles the following validator API endpoints to imp
 - Caching optimizes repeated validator queries
 - Non-cluster validators pass through unchanged for compatibility
 
-### Deprecated Endpoints (Return 404)
+### Superseded Endpoints (Return 404)
 
+These routes are registered so that a VC using an older version of the endpoint fails fast with a clear 404 rather than being silently proxied to the beacon node, which would bypass the DV workflow entirely and produce a single-share signature on chain.
+
+- `POST /eth/v1/beacon/pool/attestations` - Use v2
 - `GET /eth/v1/validator/aggregate_attestation` - Use v2
 - `POST /eth/v1/validator/aggregate_and_proofs` - Use v2
+- `GET /eth/v2/validator/blocks/{slot}` - Use v3
 - `GET /eth/v1/validator/blinded_blocks/{slot}` - Use v3
-- `GET /eth/v2/validator/blinded_blocks/{slot}` - Use v3
-- `POST /eth/v1/beacon/blocks` - Use v2
-- `POST /eth/v1/beacon/blinded_blocks` - Use v2
 - `GET /teku_proposer_config` - Teku-specific
 - `GET /proposer_config` - Teku-specific
 
+Note that `POST /eth/v1/beacon/blocks` and `POST /eth/v1/beacon/blinded_blocks` are **not** in this list: both v1 and v2 of the submission endpoints are handled.
+
 ## Proxied Endpoints
 
-All other beacon API endpoints are **reverse-proxied** directly to the upstream beacon node without modification, including:
+All other beacon API endpoints are **reverse-proxied** to the upstream beacon node without modification, including:
 
 - Chain state queries (`/eth/v2/beacon/blocks/*`, `/eth/v2/beacon/states/*`)
-- Validator queries (`/eth/v1/beacon/states/{state_id}/validators`)
 - Network information (`/eth/v1/node/syncing`, `/eth/v1/node/peers`)
 - Configuration (`/eth/v1/config/spec`, `/eth/v1/config/fork_schedule`)
 - Genesis information (`/eth/v1/beacon/genesis`)
-- Event streams (`/eth/v1/events`)
 - All other standard beacon node API endpoints
+
+`GET /eth/v1/events` is proxied, but through a dedicated handler rather than the generic proxy, because server-sent events need raw streaming access.
+
+Note that `/eth/v1/beacon/states/{state_id}/validators` is **not** proxied — it is intercepted for public key translation, as described above.
+
+## Conformance Checklist
+
+Every route a conforming implementation must serve, with its delta from a plain beacon node. This is the authoritative endpoint list; the sections above give the detail.
+
+Delta classes:
+
+- **Proxy** — forwarded to the beacon node unchanged.
+- **Rewrite** — proxied, but public keys are translated between DV root keys and this node's public shares.
+- **Consensus** — not proxied; blocks until the cluster agrees on the data, so every VC in the cluster receives identical data.
+- **Partial sig** — not forwarded; the body is a partial signature that is verified and injected into the DV signing workflow. Only the aggregated result reaches the beacon chain, broadcast by the DV, not by the VC.
+- **Aggregate** — a partial signature is submitted and the request blocks until the aggregated threshold signature is available, which is then returned to the VC.
+- **Override** — answered locally without consulting the beacon node.
+- **Discard** — accepted with a success response and no effect.
+- **404** — rejected.
+
+| Method | Path | Delta |
+| ------ | ---- | ----- |
+| POST | `/eth/v1/validator/duties/attester/{epoch}` | Rewrite |
+| GET | `/eth/v1/validator/duties/proposer/{epoch}` | Rewrite |
+| GET | `/eth/v2/validator/duties/proposer/{epoch}` | Rewrite |
+| POST | `/eth/v1/validator/duties/sync/{epoch}` | Rewrite |
+| GET | `/eth/v1/validator/attestation_data` | Consensus |
+| POST | `/eth/v2/beacon/pool/attestations` | Partial sig |
+| POST | `/eth/v1/beacon/pool/attestations` | 404 |
+| GET, POST | `/eth/v1/beacon/states/{state_id}/validators` | Rewrite |
+| GET | `/eth/v1/beacon/states/{state_id}/validators/{validator_id}` | Rewrite |
+| GET | `/eth/v3/validator/blocks/{slot}` | Consensus |
+| GET | `/eth/v2/validator/blocks/{slot}` | 404 |
+| GET | `/eth/v1/validator/blinded_blocks/{slot}` | 404 |
+| POST | `/eth/v1/beacon/blocks` | Partial sig |
+| POST | `/eth/v2/beacon/blocks` | Partial sig |
+| POST | `/eth/v1/beacon/blinded_blocks` | Partial sig |
+| POST | `/eth/v2/beacon/blinded_blocks` | Partial sig |
+| GET | `/eth/v2/validator/aggregate_attestation` | Consensus |
+| GET | `/eth/v1/validator/aggregate_attestation` | 404 |
+| POST | `/eth/v2/validator/aggregate_and_proofs` | Partial sig |
+| POST | `/eth/v1/validator/aggregate_and_proofs` | 404 |
+| POST | `/eth/v1/validator/beacon_committee_selections` | Aggregate |
+| POST | `/eth/v1/validator/sync_committee_selections` | Aggregate |
+| GET | `/eth/v1/validator/sync_committee_contribution` | Consensus |
+| POST | `/eth/v1/beacon/pool/sync_committees` | Partial sig |
+| POST | `/eth/v1/validator/contribution_and_proofs` | Partial sig |
+| POST | `/eth/v1/beacon/pool/voluntary_exits` | Partial sig |
+| POST | `/eth/v1/validator/register_validator` | Discard |
+| POST | `/eth/v1/validator/prepare_beacon_proposer` | Discard |
+| GET | `/eth/v1/node/version` | Override |
+| GET | `/eth/v1/events` | Proxy (streaming) |
+| — | everything else | Proxy |
+
+Two discards are worth understanding rather than merely implementing:
+
+- **`register_validator`**: builder registrations are pre-generated during the DKG, signed by the whole cluster, and stored in the cluster lock. The DV submits those itself on a schedule. Accepting and ignoring the VC's own registration prevents a VC-supplied fee recipient from silently overriding the cluster-agreed one.
+- **`prepare_beacon_proposer`**: fee recipients come from cluster configuration for the same reason. Returning an error instead would break VCs that submit preparations unconditionally at every epoch.
 
 ## Selection Endpoints: DV-Specific Design
 

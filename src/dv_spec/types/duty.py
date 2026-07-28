@@ -13,8 +13,8 @@ class DutyType(IntEnum):
     ATTESTER = 2
     SIGNATURE = 3
     EXIT = 4
-    BUILDER_PROPOSER = 5  # Deprecated
-    BUILDER_REGISTRATION = 6  # Deprecated
+    BUILDER_PROPOSER = 5  # Deprecated by v3 block proposals
+    BUILDER_REGISTRATION = 6
     RANDAO = 7
     PREPARE_AGGREGATOR = 8
     AGGREGATOR = 9

@@ -3,6 +3,10 @@
 This module defines the message shapes, constants, and a tiny amount of
 validation logic.
 
+Pedersen is the **opt-in** DKG algorithm, selected by setting the cluster
+definition field `dkg_algorithm` to `pedersen`. The default algorithm is
+FROST; see `frost.py`.
+
 Scope
 -----
 - Message data models mirror the protobuf schema used on the wire.
@@ -18,7 +22,7 @@ Out of scope
 from __future__ import annotations
 
 from hashlib import sha256
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import Field
 
@@ -167,21 +171,5 @@ class PedersenJustificationBundle(StrictBaseModel):
 # Derived artifacts (output)
 # ----------------------------
 
-
-class PublicShares(StrictBaseModel):
-    """Mapping from share index (1-based) to validator public key share bytes."""
-
-    shares: Dict[int, bytes] = Field(
-        default_factory=dict,
-        description="Map[1..n] -> kyber.Point-encoded public share",
-    )
-
-
-class ValidatorShare(StrictBaseModel):
-    """Resulting validator share after a successful Pedersen DKG/reshare run."""
-
-    validator_pubkey: bytes = Field(description="Validator aggregate public key (kyber.Point)")
-    secret_share: bytes = Field(description="Private share for this node (kyber.Scalar)")
-    public_shares: PublicShares = Field(
-        description="Public shares of all nodes in ascending share index order",
-    )
+# A Pedersen run produces the same per-validator artifact as a FROST run:
+# see `PublicShares` and `ValidatorShare` in `share.py`.

@@ -2,6 +2,8 @@
 
 This document describes the Pedersen distributed key generation (DKG) protocol used for generating and resharing BLS validator keys.
 
+Pedersen is the **opt-in** algorithm, selected by setting the cluster definition field `dkg_algorithm` to `pedersen`. The default is [FROST](dkg-frost.md).
+
 Scope:
 
 - Over-the-wire message shapes and fields
@@ -92,7 +94,7 @@ The following protobuf definitions are used over the wire:
 
 - [pedersen.proto](../../proto/pedersen.proto) - Pedersen DKG message definitions
 
-See the Python reference implementation: [`NodePubKeyMessage`](../../src/dv_spec/subspecs/dkg/message.py#L86-L103), [`ValidatorPubKeyShareMessage`](../../src/dv_spec/subspecs/dkg/message.py#L105-L112), [`PedersenDealBundle`](../../src/dv_spec/subspecs/dkg/message.py#L122-L132), [`PedersenResponseBundle`](../../src/dv_spec/subspecs/dkg/message.py#L141-L149), and [`PedersenJustificationBundle`](../../src/dv_spec/subspecs/dkg/message.py#L157-L164).
+See the Python reference implementation: [`dv_spec.subspecs.dkg.pedersen`](../../src/dv_spec/subspecs/dkg/pedersen.py), covering `NodePubKeyMessage`, `ValidatorPubKeyShareMessage`, `PedersenDealBundle`, `PedersenResponseBundle`, and `PedersenJustificationBundle`.
 
 ## Ceremony Sequencing
 
@@ -122,10 +124,11 @@ See the Python reference implementation: [`NodePubKeyMessage`](../../src/dv_spec
    - Nodes collect the announced shares and build the `public_shares` map ordered by share index (1-based).
 
 4. Output artifacts
-   - For each validator, the resulting artifact is:
-     - validator_pubkey: kyber.Point (aggregate validator public key)
-     - secret_share: kyber.Scalar (this node's private share)
+   - For each validator, the resulting artifact is the same one a FROST run produces (see [`dv_spec.subspecs.dkg.share`](../../src/dv_spec/subspecs/dkg/share.py)):
+     - validator_pubkey: aggregate validator public key (48-byte compressed G1)
+     - secret_share: this node's private share (32-byte scalar)
      - public_shares: map[int->bytes], share indices 1..n for the nodes that will remain after resharing
+   - The node signature exchange over the cluster lock hash that concludes the ceremony is shared with FROST; see [FROST DKG](dkg-frost.md#node-signature-exchange).
 
 ## Indexing Rules
 
@@ -133,135 +136,28 @@ See the Python reference implementation: [`NodePubKeyMessage`](../../src/dv_spec
 - Share index in bundles: 0-based unless specified by library
 - Public shares map used in cluster artifacts: 1-based index = PeerIdx + 1
 
-## Resharing Notes
+## Use in Cluster Edit Operations
 
-- The set of nodes in `oldNodes` and `newNodes` is determined by the rotation being performed; removed nodes must not contribute new shares and should broadcast an empty `ValidatorPubKeyShareMessage`.
-- The threshold t' should not be increased in add-operator flows to avoid old shares enabling reconstruction below the new threshold.
+Every [cluster edit protocol](dkg-cluster-edits.md) — reshare, add, remove and
+replace operators — uses a Pedersen **reshare**, regardless of the cluster
+definition's `dkg_algorithm`. A reshare requires participants to contribute
+existing shares, which the FROST flow does not provide. That document specifies
+who participates, the threshold rules, and the share index assignment; the
+Pedersen-specific mechanics of a reshare are:
 
-## Edit Operations Powered by Pedersen DKG
-
-This section maps cluster edit commands to concrete Pedersen DKG ceremonies. Each operation specifies who participates, how the nonce is derived, which messages are exchanged, and what artifacts are produced/updated.
-
-General across all edit operations:
-
-- Session: The session ID is the cluster Definition hash. A fresh nonce is computed per ceremony from the reliably-broadcast `node_pubkeys` of the set of peers participating in that ceremony.
-- Transport: `node_pubkeys` uses reliable broadcast; all other exchanges use direct p2p to all participating peers.
-- Indexing: Peer index is 0-based; share index used in artifacts is 1-based = PeerIdx + 1.
-- Outputs: After a successful ceremony, the cluster lock and node signatures are updated as applicable, and a new data directory with validator key shares and metadata is written.
-
-### Add Validators (append new DVs; operators unchanged)
-
-Purpose
-
-- Create and append N new validator keyshares for the existing operator set. Existing validators and operator set remain unchanged.
-
-Participants
-
-- All existing operators (as listed in the current cluster lock).
-
-Threshold
-
-- Unchanged. The existing threshold t is used for all new validators.
-
-Nonce and sequencing
-
-- One `node_pubkeys` broadcast phase across all existing operators, then run N Pedersen DKG instances (one per new validator) using the derived nonce.
-
-Message flow per validator
-
-- Deals, Responses, Justifications via p2p; after success, each node broadcasts `val_pubkey_share` for that validator.
-
-Outputs
-
-- Append N validators to the cluster artifacts (validator public keys, each node’s private share, updated public shares map) and update cluster lock accordingly. Deposit data for new validators is produced/merged if provided.
-
-Operational constraints
-
-- If a node lacks access to existing validator shares, the ceremony can proceed in an "unverified" mode (cluster lock signatures may be skipped by implementations); functionality remains intact but verification must be disabled when starting the cluster.
-
-### Recreate Private Keys (reshare; same operators set)
-
-Purpose
-
-- Rotate/refresh validator private shares for all existing validators without changing validators or operators.
-
-Participants
-
-- All existing operators.
-
-Threshold
-
-- Unchanged (t remains the same).
-
-Nonce and sequencing
-
-- One `node_pubkeys` broadcast across all operators; then run a Pedersen DKG reshare instance for each existing validator using the derived nonce.
-
-Message flow per validator
-
-- Deals, Responses, Justifications via p2p; then `val_pubkey_share` broadcast per validator. Since the validator public key stays the same, `val_pubkey_share` communicates the refreshed per-operator public share.
-
-Outputs
-
-- New private shares for all validators; public commitments unchanged; cluster lock contents unchanged aside from updated node signatures and metadata.
-
-### Add Operators (expand operator set; validators intact)
-
-Purpose
-
-- Add one or more new operators to the cluster while keeping all existing validators and their public keys unchanged.
-
-Participants
-
-- Existing operators plus the new operators being added. All of them participate in the nonce derivation and DKG resharing.
-
-Threshold
-
-- SHOULD remain unchanged to avoid reducing security with legacy shares. Implementations typically keep t constant while increasing n.
-
-Nonce and sequencing
-
-- One `node_pubkeys` reliable broadcast across the combined set (existing + new). For each existing validator, run one Pedersen reshare to expand the set of shares to include the new operators, using the derived nonce.
-
-Message flow per validator
-
-- Deals, Responses, Justifications via p2p among all participants; `val_pubkey_share` broadcast by each participant. The aggregate validator public key remains unchanged.
-
-Outputs
-
-- Updated operator list (existing + new), updated public shares map to cover the expanded operator set, unchanged validator public keys, and updated cluster lock and node signatures. New operators receive their private shares for all validators.
-
-Constraints and validations
-
-- New operator identities must not duplicate existing ones. Nodes that are new to the cluster need not have access to prior validator shares.
-
-### Remove Operators (shrink operator set; validators intact)
-
-Purpose
-
-- Remove one or more operators from the cluster while keeping all validators and their public keys intact.
-
-Participants
-
-- By default, all remaining operators (those not being removed). Optionally, a “participating operators” subset may be specified when removing more than the fault tolerance F = n − t, provided at least t operators participate.
-- Operators being removed MAY participate in the nonce phase and exchange to facilitate resharing but MUST NOT produce final signing artifacts; they effectively relinquish shares.
-
-Threshold
-
-- The recommended new threshold t' is ceil(2n'/3), where n' is the new operator count. An override MAY be provided if all participants agree, but must satisfy newT ≤ t' < n'.
-
-Nonce and sequencing
-
-- One `node_pubkeys` reliable broadcast among the participating set; for each existing validator, run one Pedersen reshare to the new operator set using the derived nonce.
-
-Message flow per validator
-
-- Deals, Responses, Justifications via p2p among participating peers; remaining operators broadcast non-empty `val_pubkey_share`. Operators being removed MUST send an empty `val_pubkey_share` (or none) to signal non-participation in the final set.
-
-Outputs
-
-- Updated operator list (remaining operators), new threshold t', updated public shares map restricted to the new set, and updated cluster lock and node signatures written by remaining operators. Removed operators do not write new artifacts.
-
-Constraints and validations
-
-- When removing more than F operators, at least t participants are required. Operators listed for removal must exist in the current lock; "participating operators" (if specified) must also be valid current operators. An operator being removed cannot participate unless explicitly included in the participating set.
+- Session and nonce: the session ID is the cluster definition hash of the lock
+  being edited. A fresh nonce is derived per ceremony from the reliably
+  broadcast `node_pubkeys` of the participating peers, so no two ceremonies
+  share a nonce.
+- Old shares are contributed by nodes that hold them. A node joining the cluster
+  holds none, and instead restores the public polynomial commitments from the
+  exchanged public key shares, validating that they recover the expected
+  validator public key.
+- Added and removed peer sets MUST be disjoint, and at least one node from the
+  original cluster must remain.
+- A node leaving the cluster receives no new share and MUST broadcast an empty
+  `ValidatorPubKeyShareMessage` to signal non-participation. Assembling nodes
+  skip empty entries when building the public shares map.
+- Node public key exchange carries the public key shares of the node's existing
+  shares (`NodePubKeyShares`), which is what lets joining nodes reconstruct the
+  commitments.

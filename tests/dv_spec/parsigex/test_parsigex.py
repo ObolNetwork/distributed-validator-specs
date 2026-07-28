@@ -52,21 +52,27 @@ def test_par_signed_data_set() -> None:
     pubkey1 = "0x" + "a" * 96
     pubkey2 = "0x" + "b" * 96
 
-    par_sig1 = ParSignedData(data=b"data1", signature=b"s" * 96, share_idx=0)
-    par_sig2 = ParSignedData(data=b"data2", signature=b"t" * 96, share_idx=1)
+    par_sig1 = ParSignedData(data=b"data1", signature=b"s" * 96, share_idx=1)
+    par_sig2 = ParSignedData(data=b"data2", signature=b"t" * 96, share_idx=2)
 
     data_set = ParSignedDataSet(set={pubkey1: par_sig1, pubkey2: par_sig2})
 
     assert len(data_set.set) == 2
-    assert data_set.set[pubkey1].share_idx == 0
-    assert data_set.set[pubkey2].share_idx == 1
+    assert data_set.set[pubkey1].share_idx == 1
+    assert data_set.set[pubkey2].share_idx == 2
+
+
+def test_par_signed_data_rejects_zero_share_idx() -> None:
+    """Share indices are 1-based; index 0 is not a valid signer."""
+    with pytest.raises(ValidationError):
+        ParSignedData(data=b"x", signature=b"y" * 96, share_idx=0)
 
 
 def test_parsigex_msg() -> None:
     """Test ParSigExMsg creation."""
     duty = Duty(slot=456, type=DutyType.RANDAO)
     data_set = ParSignedDataSet(
-        set={"pubkey1": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=0)}
+        set={"pubkey1": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=1)}
     )
 
     msg = ParSigExMsg(duty=duty, data_set=data_set)
@@ -118,7 +124,7 @@ def test_extract_pubkeys() -> None:
     data_set = ParSignedDataSet(
         set={
             pk: ParSignedData(data=b"x", signature=b"y" * 96, share_idx=i)
-            for i, pk in enumerate(pubkeys)
+            for i, pk in enumerate(pubkeys, start=1)
         }
     )
 
@@ -129,7 +135,10 @@ def test_extract_pubkeys() -> None:
 def test_count_shares() -> None:
     """Test counting shares in data set."""
     data_set = ParSignedDataSet(
-        set={f"pk{i}": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=i) for i in range(5)}
+        set={
+            f"pk{i}": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=i)
+            for i in range(1, 6)
+        }
     )
 
     assert count_shares(data_set) == 5
@@ -137,28 +146,28 @@ def test_count_shares() -> None:
 
 def test_validate_share_indices() -> None:
     """Test share index validation."""
-    # Valid indices (0-2)
+    # Valid indices for a 3-node cluster (1-3)
     valid_set = ParSignedDataSet(
         set={
-            "pk0": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=0),
             "pk1": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=1),
             "pk2": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=2),
-        }
-    )
-
-    assert validate_share_indices(valid_set, (0, 2)) is True
-    assert validate_share_indices(valid_set, (0, 1)) is False  # idx 2 out of range
-
-    # Invalid index (3 out of range)
-    invalid_set = ParSignedDataSet(
-        set={
-            "pk0": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=0),
             "pk3": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=3),
         }
     )
 
-    assert validate_share_indices(invalid_set, (0, 2)) is False
-    assert validate_share_indices(invalid_set, (0, 3)) is True
+    assert validate_share_indices(valid_set, (1, 3)) is True
+    assert validate_share_indices(valid_set, (1, 2)) is False  # idx 3 out of range
+
+    # Index 4 is out of range for a 3-node cluster
+    invalid_set = ParSignedDataSet(
+        set={
+            "pk1": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=1),
+            "pk4": ParSignedData(data=b"x", signature=b"y" * 96, share_idx=4),
+        }
+    )
+
+    assert validate_share_indices(invalid_set, (1, 3)) is False
+    assert validate_share_indices(invalid_set, (1, 4)) is True
 
 
 def test_duty_type_values() -> None:

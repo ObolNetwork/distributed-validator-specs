@@ -43,9 +43,9 @@ See the Python reference implementation: [`AnyMessage`, `BCastSigRequest`, `BCas
 
 > **Naming note**: This component lives in Charon at `dkg/bcast` and its
 > protocol ID is `/charon/dkg/bcast/1.0.0`. It is **not** the same component
-> as Charon's `core/bcast`, which broadcasts fully-signed duties to the
-> beacon node. This spec uses the module name `reliable_bcast` to avoid that
-> collision.
+> as Charon's `core/bcast`, which broadcasts fully-signed duties to the beacon
+> node — see [Beacon Broadcast](broadcast.md). This spec uses the module name
+> `reliable_bcast` to avoid that collision.
 
 ## Protocol Flow
 
