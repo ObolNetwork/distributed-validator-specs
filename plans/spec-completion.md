@@ -199,6 +199,15 @@ Also fixed in this pass:
      case signs the QBFT signing root from `qbft_hashing.json`, so the suites
      chain.
 
+   FROST transcript decision (2026-07-29, Andrei): **closed, not deferred.** A
+   ceremony's round 1 commitments depend on each node's random polynomial, so a
+   wire transcript is not reproducible without a seeded-RNG hook in charon. We
+   will not change charon to suit the spec. The vectors therefore cover what
+   actually has to match — the ceremony's *outputs* and their aggregation, in
+   `bls_threshold.json`. Do not reopen this as a vector suite; a divergence in
+   FROST's wire format has to be caught by the wire-level harness (item 4) or by
+   differential fuzzing, not by a golden transcript.
+
    Still outstanding:
    - [ ] **Cluster lock hash / signature cases.** Bigger than it looks, and not
      blocked on crypto: the spec has **no cluster definition or lock data model
@@ -210,12 +219,6 @@ Also fixed in this pass:
      `encoding/ssz.py` with mixins and limits, (c) `hashDefinitionV1x10`,
      `hashLockV1x3orLater` and `hashValidatorV1x8OrLater`. Only v1.10 is needed,
      per the Phase 1 decision. This is its own unit of work, not a vector suite.
-   - [ ] **FROST DKG wire transcripts.** A ceremony's round 1 commitments depend
-     on each node's random polynomial, so a transcript is not reproducible
-     without forcing charon's RNG. `bls_threshold.json` covers what actually has
-     to match — the ceremony's *outputs* and their aggregation. A wire transcript
-     would need a seeded-RNG hook in charon; worth raising upstream rather than
-     working around here.
 
    Publishing as versioned release artifacts is still outstanding, and depends on
    the versioning policy under Aspirations.
