@@ -13,6 +13,7 @@ for distributed validator clusters in the Obol network.
 - `src/dv_spec/types/` - Ethereum-compatible base types (Uint64, Bytes32, etc.)
 - `src/dv_spec/encoding/` - Deterministic protobuf encoding and SSZ hashing
 - `src/dv_spec/crypto/` - BLS12-381 (py_ecc) and secp256k1 (eth-keys) signatures
+- `src/dv_spec/cluster/` - Cluster definition and lock files, their hashes and verification
 - `src/dv_spec/client/` - Client configuration examples
 - `test_vectors/` - Conformance fixtures published for implementers (JSON, one file per suite)
 - `scripts/` - Test vector generation
@@ -73,7 +74,7 @@ uv run tox
 
 ## Code Style
 
-- Line length: 79 characters
+- Line length: 100 characters (enforced by ruff)
 - Use type hints everywhere
 - Follow Google docstring style
 - No docstrings needed for `__init__` methods

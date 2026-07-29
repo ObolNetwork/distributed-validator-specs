@@ -187,6 +187,67 @@ DV Launchpad / CLI ─┐
 
 This section specifies how to compute hashes and signing data for cluster files. **Field ordering during serialization is critical**. The order specified below must be followed exactly.
 
+The field layouts below are those of **version v1.10.0**, which is this spec's
+target. Every version has its own layout, and a hash computed with the wrong one
+is simply a different hash: v1.9.0 has no `target_gas_limit` or `compounding`
+field, and v1.11.0 turns the operator and creator signatures into lists of 65-byte
+signatures to support Safe smart-contract multisigs.
+
+### SSZ Hashing Rules
+
+The three hashes are SSZ hash roots, computed by walking the object's fields into
+a buffer of 32-byte chunks and collapsing nested structures back to a single
+chunk. The layouts below say which fields are visited; these rules say what each
+visit does. Getting any of them wrong produces a plausible-looking hash that no
+other implementation agrees with.
+
+- **uint64** is written little-endian in the low 8 bytes of a chunk, the
+  remaining 24 zero. **bool** is a chunk whose first byte is `0x01` or `0x00`.
+  Charon types several of these fields as signed Go ints and casts with
+  `uint64(...)`, so a negative value in a file hashes as its two's-complement
+  wrapping there; this spec rejects such a file at validation instead.
+- **BytesN** is **left**-padded to N bytes if shorter, then written as below. An
+  absent 65-byte signature therefore hashes exactly as an all-zero one, which is
+  what lets an unsigned definition and a zero-signature definition agree.
+- A byte string of **32 bytes or fewer** occupies one chunk, right-padded. A
+  longer one is right-padded to a chunk multiple and **merkleized** into a single
+  chunk: a 48-byte public key contributes `sha256(bytes[0:32] || bytes[32:48]
+  padded)`, not two chunks.
+- **Containers** merkleize their field chunks with the tree sized to the field
+  count rounded up to a power of two. An odd level is completed with that level's
+  zero-subtree hash, not with a zero leaf.
+- **Lists** merkleize with the tree sized to the declared **capacity**, not to the
+  elements present, and then mix in the length:
+  `root = sha256(tree_root || uint64_le(element_count) padded to 32 bytes)`. The
+  mixed-in value is the number of elements present. Without it, a list of two
+  empty elements and a list of three would collide.
+- A **ByteList[N]** declares its capacity in bytes, but the tree is sized in
+  chunks, so the capacity is `ceil(N / 32)` leaves and the mixed-in length is the
+  **byte** count of the data present. `ByteList[16]` and `ByteList[32]` both give
+  a single-leaf tree, so the same bytes hash identically as `version` or as
+  `timestamp`; the declared capacity appears only as the bound on the length.
+- A **uint64[256]** declares 256 elements of 8 bytes, which is `ceil(256 × 8 / 32)`
+  = 64 leaves. `deposit_amounts` is therefore a depth-6 tree even when it holds
+  one element, and an empty one hashes its depth-6 zero subtree with a zero
+  length mixed in.
+- An **empty list** has no chunks at all: its root is the zero subtree at the
+  capacity's depth, or the zero chunk if the capacity is a single leaf.
+
+Two details are quirks of Charon's implementation rather than consequences of the
+rules, and both are normative because the hashes depend on them:
+
+- `BuilderRegistration.Message.FeeRecipient` is written without a fixed length, so
+  unlike every other address in a cluster file a short value is right-padded
+  rather than left-padded.
+- Every empty list in a file Charon wrote appears as JSON `null`, because Go
+  marshals a nil slice that way. A reader MUST treat `null` and `[]` alike.
+
+See the Python reference implementation:
+[`dv_spec.encoding.ssz`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/encoding/ssz.py)
+for the hasher, [`dv_spec.cluster.hashing`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/cluster/hashing.py)
+for the three walks, and [`dv_spec.cluster`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/cluster/definition.py)
+for the data model.
+
 ### Definition Hash Computation
 
 There are two hashes computed for a cluster definition:
@@ -257,11 +318,18 @@ SSZ Merkleize of:
 
 **Important Notes:**
 
-- Bytes20 fields (addresses): Parse from 0x-prefixed hex string to raw 20 bytes
+- Bytes20 fields (addresses): Parse from 0x-prefixed hex string to raw 20 bytes. An empty string decodes to no bytes and is then left-padded to 20 zero bytes, so an absent address hashes as the zero address
 - Bytes4 (fork_version): Use raw 4 bytes
-- ByteList fields: UTF-8 encode strings, then SSZ serialize as variable-length byte list with max length
-- CompositeList: SSZ merkleize each composite element, then merkleize the list with mixin for max length
+- ByteList fields: UTF-8 encode strings, then hash as a byte list of the stated capacity, mixing in the byte length
+- CompositeList: merkleize each element to one chunk, then merkleize the list to its declared capacity and mix in the number of elements present
 - Ordering: Fields must be hashed in exact numerical order shown above
+
+The `config_hash` excludes operator ENRs and every signature for a reason worth
+stating outright: operators sign the config hash, and they sign it at different
+times. If the hash moved when a signature or an ENR arrived, every signature
+already collected would become invalid. An implementation whose config hash
+depends on any of those fields will appear to work until the second operator
+signs.
 
 ### Lock Hash Computation
 
@@ -283,7 +351,7 @@ SSZ Merkleize of:
           Field 3: Signature (Bytes96)
       Field 3: BuilderRegistration (Composite)
         Field 0: Message (Composite)
-          Field 0: FeeRecipient (Bytes20)
+          Field 0: FeeRecipient (raw bytes, right-padded if short — see SSZ Hashing Rules)
           Field 1: GasLimit (uint64)
           Field 2: Timestamp (uint64) - Unix timestamp
           Field 3: PubKey (Bytes48)
@@ -390,7 +458,14 @@ Two types of signatures attest to the lock hash:
 2. Each operator signs `lock_hash` with all of their BLS secret shares (one share per validator)
 3. All partial signatures are exchanged between operators
 4. All partial signatures are aggregated into a single BLS signature using BLS signature aggregation
-5. Verification: Aggregate public key (from all validator public shares) must verify the aggregate signature over `lock_hash`
+5. Verification: the aggregate must verify over `lock_hash` against every public share of every validator, in file order
+
+This is a **plain** aggregate, not a threshold aggregate: it is verified against
+the concatenated public shares, not against the validators' group public keys.
+The two aggregations are different operations over the same curve and are easy to
+confuse — see [Signature Aggregation](sigagg.md) for the distinction. There is one
+signature per share per validator, so a cluster of 4 operators with 2 validators
+aggregates 8 signatures and verifies against 8 public shares.
 
 #### 2. Node Signatures (node_signatures)
 
@@ -411,6 +486,62 @@ Two types of signatures attest to the lock hash:
 
 - Recover public key from `node_signatures` and `lock_hash`
 - Verify recovered public key matches operator's ENR public key
+
+### Verifying a Lock Before Use
+
+A node MUST perform all of the following before running with a lock file. The lock
+hash is the only thing binding the configuration the operators signed to the keys
+the DKG produced, so a lock that passes some of these checks and not others
+attests to a different cluster than the one it describes.
+
+1. Recompute `config_hash`, `definition_hash` and `lock_hash` and compare them
+   against the values stored in the file. The signatures only bind the fields the
+   hashes cover, so a stored hash that disagrees with the content means the
+   signatures attest to something else.
+2. Check every validator carries exactly one public share per operator, that no
+   two validators share a group public key, and that no validator repeats a
+   public share. The repeats cannot be left to step 3: a polynomial can
+   legitimately take the same value at two points, so a duplicated share does
+   not always break reconstruction.
+3. Check the public shares reconstruct the group public key — and check **every**
+   share, not just the first quorum. Charon recovers the group key from the first
+   `threshold` shares, then re-recovers it once per remaining share, substituting
+   that share for one of the first. A single corrupted extra share would otherwise
+   go unnoticed until that node's partial signatures started failing in
+   production.
+4. Verify `signature_aggregate` and every entry of `node_signatures` over the
+   recomputed `lock_hash`.
+
+Neither signature set is covered by the lock hash, which spans only the definition
+and the validators. Editing any covered field after signing therefore changes the
+lock hash and invalidates both signature sets, which is the property that makes
+this sequence worth performing.
+
+Charon additionally verifies each pre-generated builder registration — the fee
+recipient against the definition and the signature against the group key. Those
+signatures are beacon chain domain-separated and are out of scope here.
+
+See the Python reference implementation:
+[`dv_spec.cluster.verification`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/cluster/verification.py).
+Note that it takes each node's public key as an argument rather than decoding the
+operator's ENR, since ENR decoding is out of scope for this spec.
+
+### Test Vectors
+
+[`test_vectors/cluster_hashing.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/cluster_hashing.json)
+carries config, definition and lock hashes for v1.10.0 files, produced by Charon
+rather than by this spec. Each case's `input` is a verbatim Charon cluster file, so
+a passing suite means an implementation reads the real file format and agrees on
+the hashes.
+
+Two cases are worth reading before the others. `signed_single_operator` is
+`unsigned_single_operator` with signatures added and nothing else changed: their
+`config_hash` values are identical and their `definition_hash` values differ, which
+is the property the config hash exists for. `real_keys_3_of_4` is a lock with a
+real 3-of-4 BLS sharing — the same sharing
+[`test_vectors/bls_threshold.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/bls_threshold.json)
+pins — with a real signature aggregate and real node signatures, so the whole
+verification sequence above can be run against it.
 
 ## Implementation Notes
 

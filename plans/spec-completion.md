@@ -136,8 +136,7 @@ Also fixed in this pass:
 
 ## Phase 3 — Conformance testing
 
-1. **Spec-generated test vectors** (`test_vectors/`, JSON) — 5 suites done; the
-   cluster lock hash remains, see below.
+1. **Spec-generated test vectors** (`test_vectors/`, JSON) — DONE, 6 suites.
 
    Decisions (2026-07-28, Andrei): one JSON file per suite; vectors checked in as
    fixtures rather than generated at release time.
@@ -208,20 +207,59 @@ Also fixed in this pass:
    FROST's wire format has to be caught by the wire-level harness (item 4) or by
    differential fuzzing, not by a golden transcript.
 
-   Still outstanding:
-   - [ ] **Cluster lock hash / signature cases.** Bigger than it looks, and not
-     blocked on crypto: the spec has **no cluster definition or lock data model
-     at all** (only `docs/dv-spec/cluster-files.md`), and charon hashes them with
-     the full fastssz `HashWalker` API — `MerkleizeWithMixin`, explicit limits,
-     `PutUint64` — across 1025 lines of version-branched code in
-     `cluster/ssz.go`. Doing it needs (a) Pydantic models for Definition, Lock,
-     Operator, DistValidator and DepositData at v1.10, (b) extending
-     `encoding/ssz.py` with mixins and limits, (c) `hashDefinitionV1x10`,
-     `hashLockV1x3orLater` and `hashValidatorV1x8OrLater`. Only v1.10 is needed,
-     per the Phase 1 decision. This is its own unit of work, not a vector suite.
+   Cluster lock hash (DONE, 2026-07-29) — the sixth suite, and the one that
+   needed a data model rather than just vectors:
+   - [x] `src/dv_spec/cluster/`: Pydantic models for Definition, Operator,
+     Creator, ValidatorAddresses, Lock, DistValidator, DepositData,
+     BuilderRegistration and Registration at v1.10.0. They parse charon's own
+     cluster files verbatim, which is a conformance property in its own right —
+     pluto has to read the same files. Two Go-JSON quirks had to be reproduced:
+     `0x`-prefixed hex for byte fields (optional on read), and `null` rather than
+     `[]` for every empty list, because Go marshals a nil slice that way.
+   - [x] `encoding/ssz.py` gained `HashWalker`, mirroring the fastssz interface
+     charon hashes through, plus limit-aware merkleization, `calculate_limit`,
+     `put_byte_list` and `put_bytes_n`. The walker approach is what makes
+     version-dependent field sets expressible: the config hash and the definition
+     hash are the same walk with `config_only` flipped.
+   - [x] `cluster/hashing.py`: `config_hash`, `definition_hash`, `lock_hash` and
+     `verify_definition_hashes`/`verify_lock_hash`, from `hashDefinitionV1x10`,
+     `hashLockV1x3orLater`, `hashValidatorV1x8OrLater`,
+     `hashDepositDataV1x7OrLater`, `hashBuilderRegistration` and
+     `hashRegistration`. v1.10 only, per the Phase 1 decision; the module
+     documents what v1.9 and v1.11 change.
+   - [x] `cluster/verification.py`: the lock's plain BLS aggregate, the per-operator
+     secp256k1 node signatures, the pubshare count/uniqueness rules, and charon's
+     share-reconstruction check — which verifies *every* share individually, not
+     just the first quorum.
+   - [x] `test_vectors/cluster_hashing.json` — 6 definition and 4 lock cases, all
+     hashes from charon via `test_vectors/charon/cluster_generator/main.go`. Two
+     cases carry the most weight: `unsigned_single_operator`/`signed_single_operator`
+     are the same definition before and after signing, pinning that the config hash
+     does **not** move (an implementation that gets this wrong invalidates every
+     signature already collected); and `real_keys_3_of_4` is a lock with the same
+     3-of-4 sharing as `bls_threshold.json`, a real signature aggregate and real
+     node signatures whose keys really are in the operators' ENRs, so the whole
+     verification sequence runs against it. The generator refuses to emit that case
+     unless charon itself accepts both signature sets.
+   - [x] `docs/dv-spec/cluster-files.md` gained an SSZ hashing rules section (the
+     field tables could not express left-pad vs right-pad, tree sizing by capacity,
+     the mixin formula, or the `ByteList[N]` chunk rounding), a "verifying a lock
+     before use" sequence, and the vector pointers. `hashing.md` no longer claims
+     every DV hash is over protobuf bytes.
 
-   Publishing as versioned release artifacts is still outstanding, and depends on
-   the versioning policy under Aspirations.
+   Still outstanding:
+   - Publishing as versioned release artifacts, which depends on the versioning
+     policy under Aspirations.
+
+2. **Consumer suites**: Go test package in charon + Rust test crate in pluto
+   loading vectors from a pinned spec release. Catches charon regressions
+   against its own documented protocol, not just pluto divergence.
+3. **Spec-conformance CI here**: checkout charon@pinned + pluto@pinned, run
+   both vector suites; scheduled weekly run against charon@main as the
+   staleness alarm.
+4. **Wire-level harness**: extend pluto's mixed docker-compose/dkg-runner
+   infra; spec Python as passive protocol oracle (decode captured protobuf,
+   validate QBFT transcripts against `protocol.py`).
 
 ### Findings from doing the above
 
@@ -244,15 +282,60 @@ by reading it:
   (`time.Duration`), so a 5s slot (Gnosis Chain) gives an attester delay of
   1666666666ns. The spec's float helper was silently 0.33ns off; there is now an
   integer-nanosecond API and the vectors are normative in integers.
-2. **Consumer suites**: Go test package in charon + Rust test crate in pluto
-   loading vectors from a pinned spec release. Catches charon regressions
-   against its own documented protocol, not just pluto divergence.
-3. **Spec-conformance CI here**: checkout charon@pinned + pluto@pinned, run
-   both vector suites; scheduled weekly run against charon@main as the
-   staleness alarm.
-4. **Wire-level harness**: extend pluto's mixed docker-compose/dkg-runner
-   infra; spec Python as passive protocol oracle (decode captured protobuf,
-   validate QBFT transcripts against `protocol.py`).
+
+From the cluster hashing pass:
+
+- **Cluster files carry `null`, not `[]`, for every empty list**, because Go
+  marshals a nil slice that way. A reader that rejects null cannot load a charon
+  file with, say, no partial deposit data. Both parse to the same hash, since a
+  list mixes in a length of zero either way.
+- **A short fixed-size field is left-padded**, so an absent 65-byte signature
+  hashes exactly as an all-zero one. Combined with the config hash excluding
+  signatures, that means an unsigned definition, a zero-signature definition and a
+  fully signed one all share a config hash.
+- **`BuilderRegistration.Message.FeeRecipient` is the one exception**: charon writes
+  it with `PutBytes` rather than a fixed length, so a short value is right-padded.
+  An implementation that treated it as `Bytes20` like every other address would
+  agree on all realistic inputs and diverge on a short one.
+- **List trees are sized to the declared capacity, not the contents.**
+  `deposit_amounts` is `uint64[256]`, which is 64 chunks, so it is a depth-6 tree
+  holding one element. Sizing to the contents gives a different root for every
+  list in the file.
+- **`ByteList[N]` rounds its capacity up to whole chunks**, so `ByteList[16]` and
+  `ByteList[32]` produce single-leaf trees; the mixed-in length is the data's byte
+  count, so the same bytes hash identically under either capacity — `version` and
+  `timestamp` share a tree shape.
+- Charon's fastssz `Merkleize` does not align the buffer before merkleizing, and
+  truncates a trailing partial chunk if one exists. No cluster field leaves the
+  buffer unaligned, so this never fires; the spec raises rather than reproducing
+  the truncation, so a future field that did would fail loudly instead of hashing
+  differently.
+
+From the adversarial review of that pass (2026-07-29, differential execution
+against charon — 57 hand-built edge cases, 400 randomized definitions, three
+`NewForT` locks; all hashes agree):
+
+- **Charon hashes negative integers by two's-complement wrap.** Its numeric
+  fields are signed Go ints cast with `uint64(v)` in `cluster/ssz.go`, so
+  `"threshold": -1` in a lock file parses and hashes in charon. The spec bounds
+  these fields (`ge=0`; `le=2^63-1`, Go's own parse limit) and rejects the file
+  at validation instead of reproducing the wrap.
+- **`phase0.Gwei` unmarshals only from a quoted string**, so deposit amounts
+  must be *written* as JSON strings too — a bare number is unreadable by charon.
+  The models now serialize them as strings.
+- **Charon's `verifyNodeSignatures` checks against the stored `lock_hash` field**,
+  not a recomputation — safe only because `LoadClusterLock` verifies hashes
+  first, and under `--no-verify` a mismatch is only logged. The spec recomputes
+  the hash, which assumes nothing about call order.
+- **Go's `hex.DecodeString` rejects whitespace; Python's `bytes.fromhex` skips
+  it.** The spec's hex decoding now rejects whitespace so it cannot accept a
+  file charon rejects.
+- **Charon rejects a duplicated public share within a validator**
+  (`parsePubShares`), and reconstruction alone cannot be relied on to catch it —
+  a polynomial can legitimately take the same value at two points. The spec
+  checks this in `verify_pubshare_counts`.
+- **Charon rejects a definition whose `num_validators` disagrees with its
+  `validators` list length** at load. The spec enforces the same at parse.
 
 ## Aspirations (agreed, later)
 

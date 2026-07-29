@@ -16,20 +16,28 @@ from dv_spec.encoding.proto import (
 )
 from dv_spec.encoding.ssz import (
     CHUNK_SIZE,
+    UINT64_SIZE,
     ZERO_CHUNK,
     ZERO_HASHES,
+    HashWalker,
+    calculate_limit,
     chunk_count_depth,
     chunkify,
     hash_proto,
     merkleize,
+    put_byte_list,
+    put_bytes_n,
 )
 
 __all__ = [
     "CHUNK_SIZE",
     "STRING_VALUE_TYPE_URL",
+    "UINT64_SIZE",
     "ZERO_CHUNK",
     "ZERO_HASHES",
+    "HashWalker",
     "bytes_field",
+    "calculate_limit",
     "chunk_count_depth",
     "chunkify",
     "encode_any",
@@ -40,6 +48,8 @@ __all__ = [
     "hash_proto",
     "length_delimited",
     "merkleize",
+    "put_byte_list",
+    "put_bytes_n",
     "string_field",
     "tag",
     "varint",

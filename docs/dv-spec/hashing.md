@@ -1,15 +1,20 @@
 # Canonical Encoding and Hashing
 
-Every hash a Distributed Validator signs or compares is taken over protobuf
-bytes. Protobuf does not define a canonical encoding, so two implementations that
-serialise the same message differently compute different hashes: signatures fail
-to verify, `value_hash` comparisons miss, and priority topics fall into separate
-groups. Nothing about this failure mode is visible in a message dump — the
-messages look identical.
+Every hash a Distributed Validator signs or compares on the wire is taken over
+protobuf bytes. Protobuf does not define a canonical encoding, so two
+implementations that serialise the same message differently compute different
+hashes: signatures fail to verify, `value_hash` comparisons miss, and priority
+topics fall into separate groups. Nothing about this failure mode is visible in a
+message dump — the messages look identical.
 
 This page pins the encoding and the hash down exactly. It corresponds to
 Charon's `hashProto`, which appears identically in `core/consensus/qbft` and
 `core/priority`.
+
+Cluster configuration files are hashed differently — by walking the object's
+fields through a full SSZ hasher, with explicit list capacities and length
+mixins. That construction shares only its tree shape with the one below, and is
+specified in [Cluster Files](cluster-files.md#ssz-hashing-rules).
 
 ## Deterministic protobuf encoding
 

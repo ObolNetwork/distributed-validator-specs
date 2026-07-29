@@ -15,6 +15,21 @@ from typing import Any, Dict, List
 
 import pytest
 
+from dv_spec.cluster.definition import Definition
+from dv_spec.cluster.hashing import (
+    config_hash,
+    definition_hash,
+    lock_hash,
+    verify_definition_hashes,
+    verify_lock_hash,
+)
+from dv_spec.cluster.lock import Lock
+from dv_spec.cluster.verification import (
+    verify_node_signatures,
+    verify_pubshare_counts,
+    verify_shares_reconstruct,
+    verify_signature_aggregate,
+)
 from dv_spec.crypto import bls, secp256k1
 from dv_spec.encoding.proto import (
     encode_any_string,
@@ -42,6 +57,10 @@ def load(suite: str) -> Dict[str, Any]:
 
 def cases(suite: str, group: str) -> List[Any]:
     loaded = load(suite)[group]
+    # An empty group would parametrize zero tests and pass silently, so a
+    # vector file losing its cases must fail loudly instead.
+    assert loaded, f"vector suite {suite!r} has no cases in group {group!r}"
+
     return [pytest.param(case, id=case["name"]) for case in loaded]
 
 
@@ -281,6 +300,101 @@ def test_signed_message_signing_root_ignores_signature() -> None:
     roots = {case["name"]: case["hash_hex"] for case in signed}
 
     assert roots["attester_pre_prepare"] == roots["attester_pre_prepare_signed"]
+
+
+CLUSTER = "cluster_hashing"
+
+
+@pytest.mark.parametrize("case", cases(CLUSTER, "definition"))
+def test_cluster_definition_hashes(case: Dict[str, Any]) -> None:
+    definition = Definition.model_validate(case["input"])
+
+    assert config_hash(definition).hex() == case["config_hash"]
+    assert definition_hash(definition).hex() == case["definition_hash"]
+    # The hashes the file stores must agree with its content, which is what a
+    # reader checks before trusting any signature over them.
+    verify_definition_hashes(definition)
+
+
+def test_cluster_config_hash_survives_signing() -> None:
+    # The reason the config hash exists. Operators sign it while ENRs and other
+    # operators' signatures are still arriving, so it must not move when they do.
+    by_name = {case["name"]: case for case in load(CLUSTER)["definition"]}
+    unsigned = Definition.model_validate(by_name["unsigned_single_operator"]["input"])
+    signed = Definition.model_validate(by_name["signed_single_operator"]["input"])
+
+    assert signed.operators[0].config_signature, "the signed case must carry signatures"
+    assert not unsigned.operators[0].config_signature
+    assert config_hash(signed) == config_hash(unsigned)
+    assert definition_hash(signed) != definition_hash(unsigned)
+
+
+@pytest.mark.parametrize("case", cases(CLUSTER, "lock"))
+def test_cluster_lock_hash(case: Dict[str, Any]) -> None:
+    lock = Lock.model_validate(case["input"])
+
+    assert lock_hash(lock).hex() == case["lock_hash"]
+    verify_lock_hash(lock)
+
+
+@pytest.mark.parametrize("case", cases(CLUSTER, "definition"))
+def test_cluster_definition_json_round_trips(case: Dict[str, Any]) -> None:
+    definition = Definition.model_validate(case["input"])
+    reparsed = Definition.model_validate(json.loads(definition.model_dump_json()))
+
+    assert reparsed == definition
+
+
+@pytest.mark.parametrize("case", cases(CLUSTER, "lock"))
+def test_cluster_lock_json_round_trips(case: Dict[str, Any]) -> None:
+    # The models have to read Charon's file format, not a transcription of it,
+    # so a plain dump must re-parse to an identical lock — every field, not just
+    # the ones the lock hash covers.
+    lock = Lock.model_validate(case["input"])
+    reparsed = Lock.model_validate(json.loads(lock.model_dump_json()))
+
+    assert reparsed == lock
+    assert lock_hash(reparsed) == lock_hash(lock)
+
+
+def test_cluster_lock_signatures_verify() -> None:
+    case = next(entry for entry in load(CLUSTER)["lock"] if entry["name"] == "real_keys_3_of_4")
+    lock = Lock.model_validate(case["input"])
+    node_pubkeys = [bytes.fromhex(pubkey) for pubkey in case["node_pubkeys"]]
+
+    verify_pubshare_counts(lock)
+    verify_shares_reconstruct(lock)
+
+    assert verify_signature_aggregate(lock)
+    assert verify_node_signatures(lock, node_pubkeys)
+
+
+def test_cluster_lock_aggregate_covers_the_lock_hash() -> None:
+    # A lock whose content is edited after signing must fail, otherwise the
+    # aggregate would attest to a cluster nobody agreed to.
+    case = next(entry for entry in load(CLUSTER)["lock"] if entry["name"] == "real_keys_3_of_4")
+    lock = Lock.model_validate(case["input"])
+    tampered = lock.model_copy(
+        update={"definition": lock.definition.model_copy(update={"threshold": 2})}
+    )
+
+    assert lock_hash(tampered) != lock_hash(lock)
+    assert not verify_signature_aggregate(tampered)
+
+
+def test_cluster_lock_reuses_the_bls_threshold_sharing() -> None:
+    # Chains the two suites: the lock's public shares are the same sharing
+    # bls_threshold.json pins, so its group key must reconstruct from them.
+    case = next(entry for entry in load(CLUSTER)["lock"] if entry["name"] == "real_keys_3_of_4")
+    lock = Lock.model_validate(case["input"])
+    pubshares = {
+        partial["input"]["share_idx"]: partial["pubshare_hex"] for partial in load(BLS)["partials"]
+    }
+
+    assert [share.hex() for share in lock.validators[0].pubshares] == [
+        pubshares[index] for index in sorted(pubshares)
+    ]
+    assert lock.validators[0].pubkey.hex() == load(BLS)["group_pubkey_hex"]
 
 
 def test_every_suite_declares_provenance() -> None:

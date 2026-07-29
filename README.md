@@ -101,6 +101,7 @@ uv run pytest
 │   └── dv_spec/                     # Library: specs and reference models
 │       ├── validator.py             # Core DV data structures (types/helpers)
 │       ├── client/                  # Client configuration examples
+│       ├── cluster/                 # Cluster definition and lock files, and their hashes
 │       ├── crypto/                  # BLS12-381 and secp256k1 signatures
 │       ├── encoding/                # Deterministic proto encoding and SSZ hashing
 │       ├── subspecs/                # Protocol implementations
