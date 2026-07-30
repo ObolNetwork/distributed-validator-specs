@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package core.corepb.v1;
+
 import "core.proto";
 import "google/protobuf/any.proto";
 
@@ -10,8 +12,8 @@ message PriorityTopicProposal {
 
 message PriorityMsg {
   core.corepb.v1.Duty duty = 1;
-  string peer_id = 2;
-  repeated PriorityTopicProposal topics = 3;
+  repeated PriorityTopicProposal topics = 2;
+  string peer_id = 3;
   bytes signature = 4;
 }
 

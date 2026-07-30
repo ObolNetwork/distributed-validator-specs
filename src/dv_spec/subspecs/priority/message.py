@@ -39,11 +39,14 @@ class PriorityMsg(BaseModel):
     for a given duty, along with cryptographic signature.
     """
 
+    # Field order mirrors the wire schema in `proto/priority.proto`: duty 1,
+    # topics 2, peer_id 3, signature 4. The message is signed over its encoding,
+    # so the numbering is not cosmetic.
     duty: Duty = Field(description="The validator duty instance")
-    peer_id: str = Field(description="libp2p peer ID string of the sender")
     topics: list[PriorityTopicProposal] = Field(
         default_factory=list, description="List of topic proposals with priorities"
     )
+    peer_id: str = Field(description="libp2p peer ID string of the sender")
     signature: bytes = Field(
         default=b"", description="secp256k1 signature over message hash (empty before signing)"
     )

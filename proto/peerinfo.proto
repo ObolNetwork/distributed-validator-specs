@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package app.peerinfo.peerinfopb.v1;
+
 import "google/protobuf/timestamp.proto";
 
 message PeerInfo {

@@ -120,10 +120,10 @@ When initiating a priority instance:
 
 ```
 msg := PriorityMsg{
-  duty: duty,
-  peer_id: own_peer_id,
-  topics: [topics...],
-  signature: nil
+  duty: duty,          // field 1
+  topics: [topics...], // field 2
+  peer_id: own_peer_id,// field 3
+  signature: nil       // field 4
 }
 
 hash := ssz_hash(deterministic_marshal(msg))
@@ -131,6 +131,12 @@ msg.signature = secp256k1_sign(private_key, hash)
 ```
 
 The signature is computed over the entire message with the signature field set to nil.
+
+Because the signature covers the encoding, the field numbers are part of the
+protocol: `topics` is field 2 and `peer_id` is field 3, per
+[`proto/priority.proto`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/priority.proto).
+Transposing the two yields a signing root no peer can reproduce, so no signature
+verifies. `scripts/check_proto_parity.py` pins this against Charon.
 
 ### 2. Exchange with Peers
 
