@@ -9,12 +9,8 @@ from dv_spec.types.duty import Duty, DutyType
 
 from .helpers import (
     LEGACY_PROTOCOL_ID,
-    MAX_PRIORITIES,
     PROTOCOL_ID,
     PROTOCOLS,
-    calculate_priority_score,
-    calculate_result,
-    validate_messages,
 )
 from .message import (
     PriorityMsg,
@@ -22,6 +18,11 @@ from .message import (
     PriorityScoredResult,
     PriorityTopicProposal,
     PriorityTopicResult,
+)
+from .scoring import (
+    MAX_PRIORITIES,
+    calculate_result,
+    validate_msgs,
 )
 
 __all__ = [
@@ -36,7 +37,6 @@ __all__ = [
     "LEGACY_PROTOCOL_ID",
     "PROTOCOLS",
     "MAX_PRIORITIES",
-    "calculate_priority_score",
     "calculate_result",
-    "validate_messages",
+    "validate_msgs",
 ]

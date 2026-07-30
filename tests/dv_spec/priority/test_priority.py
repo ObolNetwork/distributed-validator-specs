@@ -1,6 +1,9 @@
-"""Tests for priority protocol message models and helpers."""
+"""Tests for priority protocol message models and identifiers.
 
-import pytest
+Scoring internals are covered by `test_scoring.py` and, against Charon's own
+table, by `tests/test_vectors.py`. The `calculate_result` tests here exercise
+the function as the package exports it.
+"""
 
 from dv_spec.subspecs.priority import (
     LEGACY_PROTOCOL_ID,
@@ -14,11 +17,8 @@ from dv_spec.subspecs.priority import (
     PriorityScoredResult,
     PriorityTopicProposal,
     PriorityTopicResult,
-    calculate_priority_score,
     calculate_result,
-    validate_messages,
 )
-from dv_spec.subspecs.priority.helpers import extract_priority_values
 
 
 def test_protocol_id() -> None:
@@ -108,97 +108,6 @@ def test_priority_result() -> None:
     assert len(result.topics) == 1
 
 
-def test_calculate_priority_score() -> None:
-    """Test priority score calculation."""
-    # Priority in 3 peers at positions [0, 1, 2]
-    # position_scores = [1000, 999, 998]
-    score1 = calculate_priority_score(3, [1000, 999, 998])
-    assert score1 == 5997  # 3 * 1000 + (1000 + 999 + 998)
-
-    # Priority in 2 peers at positions [0, 0]
-    # position_scores = [1000, 1000]
-    score2 = calculate_priority_score(2, [1000, 1000])
-    assert score2 == 4000  # 2 * 1000 + (1000 + 1000)
-
-    # Score1 should be higher (more peers)
-    assert score1 > score2
-
-
-def test_validate_messages_success() -> None:
-    """Test message validation with valid messages."""
-    duty = Duty(slot=1, type=DutyType.ATTESTER)
-    msg1 = PriorityMsg(duty=duty, peer_id="peer1", topics=[])
-    msg2 = PriorityMsg(duty=duty, peer_id="peer2", topics=[])
-
-    valid, error = validate_messages([msg1, msg2])
-    assert valid is True
-    assert error == ""
-
-
-def test_validate_messages_empty() -> None:
-    """Test validation fails with empty messages."""
-    valid, error = validate_messages([])
-    assert valid is False
-    assert "Not enough messages" in error
-
-
-def test_validate_messages_mismatching_duties() -> None:
-    """Test validation fails with mismatching duties."""
-    msg1 = PriorityMsg(duty=Duty(slot=1, type=DutyType.ATTESTER), peer_id="peer1", topics=[])
-    msg2 = PriorityMsg(duty=Duty(slot=2, type=DutyType.ATTESTER), peer_id="peer2", topics=[])
-
-    valid, error = validate_messages([msg1, msg2])
-    assert valid is False
-    assert "Mismatching duties" in error
-
-
-def test_validate_messages_duplicate_peer() -> None:
-    """Test validation fails with duplicate peer IDs."""
-    duty = Duty(slot=1, type=DutyType.ATTESTER)
-    msg1 = PriorityMsg(duty=duty, peer_id="peer1", topics=[])
-    msg2 = PriorityMsg(duty=duty, peer_id="peer1", topics=[])
-
-    valid, error = validate_messages([msg1, msg2])
-    assert valid is False
-    assert "Duplicate peer" in error
-
-
-def test_validate_messages_duplicate_topic() -> None:
-    """Test validation fails with duplicate topics in same message."""
-    duty = Duty(slot=1, type=DutyType.ATTESTER)
-    topic1 = PriorityTopicProposal(topic="protocol", priorities=["A"])
-    topic2 = PriorityTopicProposal(topic="protocol", priorities=["B"])
-    msg = PriorityMsg(duty=duty, peer_id="peer1", topics=[topic1, topic2])
-
-    valid, error = validate_messages([msg])
-    assert valid is False
-    assert "Duplicate topic" in error
-
-
-def test_validate_messages_too_many_priorities() -> None:
-    """Test validation fails when topic has too many priorities."""
-    duty = Duty(slot=1, type=DutyType.ATTESTER)
-    # Create topic with MAX_PRIORITIES priorities (should fail)
-    priorities = [f"priority_{i}" for i in range(MAX_PRIORITIES)]
-    topic = PriorityTopicProposal(topic="test", priorities=priorities)
-    msg = PriorityMsg(duty=duty, peer_id="peer1", topics=[topic])
-
-    valid, error = validate_messages([msg])
-    assert valid is False
-    assert "Too many priorities" in error
-
-
-def test_validate_messages_duplicate_priority() -> None:
-    """Test validation fails with duplicate priorities in topic."""
-    duty = Duty(slot=1, type=DutyType.ATTESTER)
-    topic = PriorityTopicProposal(topic="test", priorities=["A", "B", "A"])
-    msg = PriorityMsg(duty=duty, peer_id="peer1", topics=[topic])
-
-    valid, error = validate_messages([msg])
-    assert valid is False
-    assert "Duplicate priority" in error
-
-
 def test_calculate_result_simple() -> None:
     """Test calculating result with simple inputs."""
     duty = Duty(slot=1, type=DutyType.ATTESTER)
@@ -216,10 +125,9 @@ def test_calculate_result_simple() -> None:
 
     result = calculate_result([msg1, msg2], min_required=2)
 
-    assert result is not None
     assert len(result.topics) == 1
     assert result.topics[0].topic == "protocol"
-    # Only "A" appears in both messages
+    # Only "A" clears the two-peer threshold: "B" and "C" score 999 each.
     assert len(result.topics[0].priorities) == 1
     assert result.topics[0].priorities[0].priority == "A"
 
@@ -247,15 +155,14 @@ def test_calculate_result_scoring() -> None:
 
     result = calculate_result([msg1, msg2, msg3], min_required=2)
 
-    assert result is not None
     assert len(result.topics) == 1
 
     # All three should be included
     priorities = [p.priority for p in result.topics[0].priorities]
     assert len(priorities) == 3
 
-    # "A" should be first (appears at position 0 twice, position 1 once)
-    # Score: 3*1000 + (1000 + 999 + 1000) = 5999
+    # "A" is first: positions 0, 1, 0 score 1000 + 999 + 1000 = 2999,
+    # one more than "B" at positions 1, 0, 1.
     assert priorities[0] == "A"
 
 
@@ -282,7 +189,6 @@ def test_calculate_result_multiple_topics() -> None:
 
     result = calculate_result([msg1, msg2], min_required=2)
 
-    assert result is not None
     assert len(result.topics) == 2
 
     # Check both topics are present (order may vary due to hash sorting)
@@ -314,40 +220,10 @@ def test_calculate_result_threshold_filtering() -> None:
     # Require 3 peers to include a priority
     result = calculate_result([msg1, msg2, msg3], min_required=3)
 
-    assert result is not None
     assert len(result.topics) == 1
     # Only "A" appears in all 3 messages
     assert len(result.topics[0].priorities) == 1
     assert result.topics[0].priorities[0].priority == "A"
-
-
-def test_calculate_result_invalid_input() -> None:
-    """Test that invalid inputs return None."""
-    # Mismatching duties
-    msg1 = PriorityMsg(duty=Duty(slot=1, type=DutyType.ATTESTER), peer_id="peer1", topics=[])
-    msg2 = PriorityMsg(duty=Duty(slot=2, type=DutyType.ATTESTER), peer_id="peer2", topics=[])
-
-    result = calculate_result([msg1, msg2], min_required=2)
-    assert result is None
-
-
-def test_extract_priority_values() -> None:
-    """Test extracting priority values from result."""
-    topic_result = PriorityTopicResult(
-        topic="protocol",
-        priorities=[
-            PriorityScoredResult(priority="A", score=5000),
-            PriorityScoredResult(priority="B", score=4000),
-        ],
-    )
-    result = PriorityResult(msgs=[], topics=[topic_result])
-
-    values = extract_priority_values(result, "protocol")
-    assert values == ["A", "B"]
-
-    # Non-existent topic
-    values = extract_priority_values(result, "nonexistent")
-    assert values == []
 
 
 def test_json_serialization() -> None:
@@ -392,7 +268,5 @@ def test_deterministic_ordering() -> None:
     result2 = calculate_result(msgs2, min_required=2)
 
     # Results should be identical
-    assert result1 is not None
-    assert result2 is not None
     assert len(result1.topics) == len(result2.topics)
     assert result1.topics[0].priorities == result2.topics[0].priorities
