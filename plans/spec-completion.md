@@ -332,13 +332,52 @@ Also fixed in this pass:
    both verdicts, since a suite that drifted to all-accept would pass every case
    while testing nothing.
 
-   Still outstanding:
-   - Publishing as versioned release artifacts, which depends on the versioning
-     policy under Aspirations.
+   Versioned release artifacts (DONE, 2026-07-30) — the last piece of item 1, and
+   the keystone for item 2, which pins "a spec release" rather than a commit.
+
+   Decision (2026-07-30, Andrei): **spec semver plus a manifest**, not charon
+   MAJOR.MINOR as this plan originally sketched. The sketch cannot hold: the spec
+   tracks charon `main`, so it may specify behaviour no tagged charon carries — at
+   `6054bcb2` three do — and a tag named `spec-v1.11` would claim to describe a
+   charon that behaves differently. On that scheme no first release could be cut
+   today at all. Instead the spec versions itself and the manifest states which
+   charon it was validated against.
+
+   - [x] `docs/versioning.md` — the policy: what bumps MAJOR/MINOR/PATCH, what an
+     artifact contains, how a consumer reads the manifest, and how to cut a
+     release. A **correction bumps MINOR, not PATCH**: when the spec said `peer_id`
+     was field 2 of `PriorityMsg`, an implementation that followed it had to change
+     its wire output, and calling that a fix does not make it compatible.
+   - [x] `charon_anchor.json` gained `behaviours` — the machine-readable form of
+     README's compatibility table, with the first charon release per behaviour
+     (`null` for main-only). `tests/test_release.py` fails if the two disagree.
+   - [x] `scripts/build_release.py` + `.github/workflows/release.yml` — builds
+     `manifest.json` + `test_vectors/` + `proto/` (40 KiB tarball), attached to a
+     published GitHub release. Runs on `release: published` rather than tag push,
+     so a human decides a release happens and CI only builds what it ships, and it
+     **fails if the tag and `pyproject.toml` disagree** — otherwise a release could
+     ship a manifest naming a different version than the tag a consumer pinned.
+     Docs are deliberately not in the artifact: a Go or Rust test cannot assert
+     against Markdown.
+   - [x] `pyproject.toml` version 0.0.1 → 0.1.0. **No tag was cut and nothing was
+     published** — that is outward-facing and left to a human.
+
+   Found by consuming the built artifact rather than by reading it: **charon's tags
+   do not order lexically**, so `"v1.11.0" > "v1.9.0"` is false and a consumer
+   filtering behaviours by string comparison silently concludes that v1.11.0
+   behaviour is present on a v1.9.0 charon. The manifest therefore ships
+   `first_charon_release_semver` as a `[major, minor, patch]` triple alongside the
+   tag, and the policy page says to compare with it. Verified by walking the ladder
+   against the extracted tarball: 7 behaviours absent on v1.7.1 (pluto's pin), 5 on
+   v1.9.0, 3 on v1.11.0.
 
 2. **Consumer suites**: Go test package in charon + Rust test crate in pluto
    loading vectors from a pinned spec release. Catches charon regressions
    against its own documented protocol, not just pluto divergence.
+
+   No longer blocked: the release mechanism it pins against exists as of
+   2026-07-30 (see item 1), so a consumer can depend on `spec-v0.1.0` once that
+   tag is published. Both halves are cross-repository work, which is what remains.
 3. **Spec-conformance CI here** — split, because the two halves have different
    blockers:
    - [x] **Staleness alarm (DONE, 2026-07-30).** `charon_anchor.json` holds the
@@ -499,9 +538,6 @@ against charon — 57 hand-built edge cases, 400 randomized definitions, three
   charon-Go, pluto-Rust state machines; compare outputs.
 - **Pluto link-back**: one-line PR to pluto README/AGENTS.md referencing this
   spec once Phase 1 lands ("read the spec; Go source is the reference impl").
-- **Versioning policy**: tagged spec releases (`spec-v1.7.1`, `spec-v1.8.x`)
-  mapped to charon MAJOR.MINOR so pluto's version-forward path has an
-  artifact trail.
 - Quirks registry doc: still deferred, and now thinner — the priority slash was
   fixed upstream (Phase 1.1), leaving the dkg-sync trailing slash and the
   priority legacy alias, which is scheduled for removal in charon `v1.14`.

@@ -13,6 +13,7 @@ plumbing live here rather than being written twice.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -45,6 +46,49 @@ class ProtoPair:
 
 
 @dataclass(frozen=True)
+class Behaviour:
+    """A specified behaviour and the first Charon release that carried it.
+
+    `first_charon_release` is None for behaviour that exists only on Charon main,
+    which a consumer running a released Charon must not expect to interoperate
+    with yet.
+    """
+
+    name: str
+    first_charon_release: str | None
+    spec: str
+    note: str
+
+    @property
+    def released(self) -> bool:
+        """Whether any tagged Charon release carries this behaviour."""
+        return self.first_charon_release is not None
+
+    @property
+    def semver(self) -> tuple[int, int, int] | None:
+        """`first_charon_release` as a comparable triple, or None if unreleased.
+
+        Charon's tags do not compare correctly as strings: `"v1.11.0" > "v1.9.0"`
+        is False, because `"1" < "9"` at the third character. Every consumer
+        deciding "is this behaviour in the Charon I run?" needs that comparison,
+        so the manifest ships the triple rather than leaving each of them to
+        rediscover the trap.
+        """
+        if self.first_charon_release is None:
+            return None
+
+        match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", self.first_charon_release)
+        if match is None:
+            raise CharonRepoError(
+                f"behaviour {self.name!r} has unparsable release "
+                f"{self.first_charon_release!r}; expected vMAJOR.MINOR.PATCH"
+            )
+
+        major, minor, patch = match.groups()
+        return int(major), int(minor), int(patch)
+
+
+@dataclass(frozen=True)
 class Anchor:
     """The pinned Charon commit and the paths that matter to this spec."""
 
@@ -55,6 +99,7 @@ class Anchor:
     watch_paths: tuple[str, ...]
     ignore_paths: tuple[str, ...]
     protos: tuple[ProtoPair, ...]
+    behaviours: tuple[Behaviour, ...]
 
     @classmethod
     def load(cls, path: Path = ANCHOR_PATH) -> Anchor:
@@ -75,6 +120,15 @@ class Anchor:
                     why_not_mirrored=entry.get("why_not_mirrored", ""),
                 )
                 for entry in data["protos"]
+            ),
+            behaviours=tuple(
+                Behaviour(
+                    name=entry["name"],
+                    first_charon_release=entry["first_charon_release"],
+                    spec=entry["spec"],
+                    note=entry.get("note", ""),
+                )
+                for entry in data["behaviours"]
             ),
         )
 

@@ -71,5 +71,46 @@
       "charon": "core/corepb/v1/priority.proto"
     }
   ],
-  "protos_note": "Each spec proto and the Charon file it mirrors, compared field by field at the anchor commit by scripts/check_proto_parity.py. Messages Charon defines that the spec deliberately omits must be listed under not_mirrored with a reason; anything undeclared is a finding."
+  "protos_note": "Each spec proto and the Charon file it mirrors, compared field by field at the anchor commit by scripts/check_proto_parity.py. Messages Charon defines that the spec deliberately omits must be listed under not_mirrored with a reason; anything undeclared is a finding.",
+  "behaviours": [
+    {
+      "name": "MsgSync.nickname field (DKG sync)",
+      "first_charon_release": "v1.9.0",
+      "spec": "docs/dv-spec/dkg-sync.md"
+    },
+    {
+      "name": "Deterministic (genesis-derived) eager double linear round deadlines",
+      "first_charon_release": "v1.9.0",
+      "spec": "docs/dv-spec/consensus.md"
+    },
+    {
+      "name": "Linear round timer subsequent-round timeout fix",
+      "first_charon_release": "v1.11.0",
+      "spec": "docs/dv-spec/consensus.md"
+    },
+    {
+      "name": "QBFT DECIDED-resend rate limit and message size/count limits",
+      "first_charon_release": "v1.11.0",
+      "spec": "docs/dv-spec/consensus.md"
+    },
+    {
+      "name": "Preferred priority protocol ID /charon/priority/2.0.0",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/priority.md",
+      "note": "Unreleased on Charon main. The legacy no-slash ID is the only one every released Charon speaks and must still be served; Charon targets v1.12 for the preferred ID and v1.14 for removing the alias."
+    },
+    {
+      "name": "Stable sort of scored priorities",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/priority.md",
+      "note": "Unreleased on Charon main. Only changes results for a tie among thirteen or more priorities in a topic, which no released Charon produces."
+    },
+    {
+      "name": "Sender-bound share indices in the DKG lock-hash exchange",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/parsigex.md",
+      "note": "Unreleased on Charon main. Rejects only partial signatures no honest peer sends."
+    }
+  ],
+  "behaviours_note": "Specified behaviours that postdate Charon v1.7.1, the release Pluto pins. first_charon_release is null for behaviour that exists only on Charon main. This is the machine-readable form of the compatibility table in README.md, and it is what release manifests carry so a consumer pinning a spec release can tell which parts apply to the Charon it runs against."
 }

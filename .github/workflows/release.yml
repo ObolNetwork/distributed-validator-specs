@@ -1,0 +1,63 @@
+name: Release
+
+# Attaches the release artifact (manifest + vectors + protos) to a published
+# GitHub release. Runs on `release: published` rather than on a tag push, so a
+# human decides that a release happens and CI only builds what it ships.
+#
+# `workflow_dispatch` builds the artifact without publishing anything, as a dry
+# run before tagging.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  artifact:
+    name: Build the spec release artifact
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed only to attach the asset to the release being published.
+      contents: write
+    steps:
+      - name: Checkout spec
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+          python-version: "3.13"
+
+      # A tag naming one version while the manifest names another would leave a
+      # consumer pinning `spec-v0.2.0` and loading a manifest that says 0.1.0.
+      - name: Check the tag matches pyproject.toml
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(uv run python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          if [ "$TAG" != "spec-v${version}" ]; then
+            echo "::error::tag '${TAG}' does not match pyproject version '${version}' (expected 'spec-v${version}')"
+            exit 1
+          fi
+
+      - name: Build the artifact
+        run: uv run python scripts/build_release.py --archive
+
+      - name: Upload as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec-release
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" dist/*.tar.gz --clobber

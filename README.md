@@ -53,6 +53,12 @@ All of these are backwards compatible on the wire (unknown proto fields are
 ignored; limits only reject messages no honest peer sends), so implementing
 the current spec remains interoperable with older Charon peers.
 
+This table is also machine-readable, under `behaviours` in
+[`charon_anchor.json`](charon_anchor.json), and every spec release ships it in
+`manifest.json` so a consumer can check its pinned Charon against the spec it
+pinned. See [Versioning and releases](docs/versioning.md) for how spec versions
+relate to Charon's — they deliberately do not match.
+
 The three unreleased entries need care in both directions. The legacy priority
 protocol ID `charon/priority/2.0.0` is the **only** one every released Charon
 speaks, so it must still be served alongside the preferred spelling; Charon's own
@@ -252,6 +258,7 @@ uv run mkdocs build
 | Regenerate test vectors                | `uv run python scripts/generate_test_vectors.py` |
 | Check for Charon drift past the anchor | `uv run python scripts/check_charon_drift.py` |
 | Check `proto/` parity at the anchor    | `uv run python scripts/check_proto_parity.py` |
+| Build a release artifact               | `uv run python scripts/build_release.py --archive` |
 | Build docs                             | `uv run mkdocs build`               |
 | Serve docs                             | `uv run mkdocs serve`               |
 | Run all quality checks (no tests/docs) | `uv run tox -e all-checks`          |

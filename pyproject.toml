@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "distributed-validator-specs"
-version = "0.0.1"
+version = "0.1.0"
 description = "Distributed Validator protocol specifications"
 readme = "README.md"
 authors = [

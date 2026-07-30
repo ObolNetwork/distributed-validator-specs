@@ -59,6 +59,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Versioning and Releases: versioning.md
   - Cluster:
       - Cluster Files: dv-spec/cluster-files.md
   - Key Generation:
