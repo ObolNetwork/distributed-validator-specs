@@ -34,6 +34,7 @@ from charon_repo import (
     EXIT_OK,
     Anchor,
     CharonRepoError,
+    fetch_branch_head,
     resolve_repo,
     run_git,
 )
@@ -59,20 +60,24 @@ class Commit:
         return all(path.endswith("_test.go") for path in self.watched_paths)
 
 
-def find_drift(anchor: Anchor, repo: Path) -> List[Commit]:
-    """List commits between the anchor and the tracked branch touching spec surface."""
-    if not run_git(["cat-file", "-t", anchor.commit], cwd=repo).strip() == "commit":
+def find_drift(anchor: Anchor, repo: Path, head: str) -> List[Commit]:
+    """List commits between the anchor and `head` touching spec surface."""
+    if run_git(["cat-file", "-t", anchor.commit], cwd=repo).strip() != "commit":
         raise CharonRepoError(f"anchor {anchor.commit} is not a commit in {anchor.repo}")
 
     # \x1e (record separator) cannot appear in a subject line, unlike newlines,
-    # which --name-only already uses to separate paths.
+    # which --name-only already uses to separate paths. --no-renames matters:
+    # with rename detection, a commit moving a watched file lists only the
+    # destination path, so a restructure out of the watched surface would
+    # report as "no drift" — the exact silence this script exists to prevent.
     log = run_git(
         [
             "log",
             "--name-only",
+            "--no-renames",
             "--no-merges",
             "--format=\x1e%H%x1f%s",
-            f"{anchor.commit}..origin/{anchor.branch}",
+            f"{anchor.commit}..{head}",
         ],
         cwd=repo,
     )
@@ -147,8 +152,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         anchor = Anchor.load()
         repo = resolve_repo(anchor, args.repo_path, stack)
-        head = run_git(["rev-parse", f"origin/{anchor.branch}"], cwd=repo).strip()
-        commits = find_drift(anchor, repo)
+        head = fetch_branch_head(anchor, repo)
+        commits = find_drift(anchor, repo, head)
     except CharonRepoError as error:
         print(f"charon drift check could not run: {error}", file=sys.stderr)
         return EXIT_ERROR

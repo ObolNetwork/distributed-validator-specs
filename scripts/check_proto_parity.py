@@ -190,9 +190,6 @@ def parse_reserved(path: str, body: str) -> List[int]:
             )
         numbers.append(int(part))
 
-    if not numbers:
-        raise ProtoParseError(f"{path}: empty reserved statement")
-
     return numbers
 
 
@@ -300,7 +297,8 @@ def check_proto_dir_coverage(pairs: Sequence[ProtoPair]) -> List[str]:
     Without this, adding a spec proto silently opts it out of parity checking.
     """
     mapped = {pair.spec for pair in pairs}
-    present = {str(path.relative_to(REPO_ROOT)) for path in PROTO_DIR.glob("*.proto")}
+    # rglob, not glob: a proto tucked into a subdirectory must not escape.
+    present = {str(path.relative_to(REPO_ROOT)) for path in PROTO_DIR.rglob("*.proto")}
 
     findings = [
         f"`{path}` is not listed under `protos` in `charon_anchor.json`, so nothing checks it"
@@ -474,6 +472,8 @@ def collect_findings(anchor: Anchor, repo: Path) -> tuple[Dict[str, List[str]], 
     for pair in anchor.protos:
         path = REPO_ROOT / pair.spec
         if not path.exists():
+            # Not a silent skip: check_proto_dir_coverage above has already
+            # reported the missing file as a finding, forcing a non-zero exit.
             continue
         schemas[pair.spec] = parse_proto(pair.spec, path.read_text())
 

@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence
+from typing import Any, List, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ANCHOR_PATH = REPO_ROOT / "charon_anchor.json"
@@ -32,7 +32,7 @@ EXIT_ERROR = 2
 
 
 class CharonRepoError(RuntimeError):
-    """The check could not be completed, as distinct from finding something."""
+    """The check or build could not be completed, as distinct from a check finding something."""
 
 
 @dataclass(frozen=True)
@@ -49,9 +49,10 @@ class ProtoPair:
 class Behaviour:
     """A specified behaviour and the first Charon release that carried it.
 
-    `first_charon_release` is None for behaviour that exists only on Charon main,
-    which a consumer running a released Charon must not expect to interoperate
-    with yet.
+    `first_charon_release` is None for behaviour that no final Charon release
+    carries — it may exist only on Charon `main`, or in release candidates; the
+    entry's note says which. A consumer running a released Charon must not
+    expect to interoperate with such behaviour yet.
     """
 
     name: str
@@ -103,8 +104,21 @@ class Anchor:
 
     @classmethod
     def load(cls, path: Path = ANCHOR_PATH) -> Anchor:
-        """Read the anchor from its JSON file."""
-        data = json.loads(path.read_text())
+        """Read the anchor from its JSON file.
+
+        Raises:
+            CharonRepoError: If the file is unreadable, is not JSON, or lacks a
+                required key. Wrapped so a broken anchor exits as "the check
+                could not run" rather than as a finding.
+        """
+        try:
+            data = json.loads(path.read_text())
+            return cls._parse(data)
+        except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+            raise CharonRepoError(f"cannot load anchor {path}: {error!r}") from error
+
+    @classmethod
+    def _parse(cls, data: dict[str, Any]) -> Anchor:
         return cls(
             repo=data["repo"],
             branch=data["branch"],
@@ -138,10 +152,23 @@ class Anchor:
         `ignore_paths` wins over `watch_paths`, which is how a single ignored file
         inside a watched directory (`core/deadline.go`) is expressed.
         """
-        if not any(path.startswith(prefix) for prefix in self.watch_paths):
+        if not any(_covers(path, prefix) for prefix in self.watch_paths):
             return False
 
-        return not any(path == prefix or path.startswith(prefix) for prefix in self.ignore_paths)
+        return not any(_covers(path, prefix) for prefix in self.ignore_paths)
+
+
+def _covers(path: str, prefix: str) -> bool:
+    """Whether a watch or ignore entry covers a changed file.
+
+    A directory entry (trailing `/`) covers everything under it. A file entry
+    covers exactly that file — a bare `startswith` would also match
+    `core/deadline.gogen`, silently widening an ignore to its neighbours.
+    """
+    if prefix.endswith("/"):
+        return path.startswith(prefix)
+
+    return path == prefix or path.startswith(prefix + "/")
 
 
 def run_git(args: Sequence[str], cwd: Path | None = None) -> str:
@@ -183,6 +210,11 @@ def clone_charon(anchor: Anchor, destination: Path) -> Path:
 def resolve_repo(anchor: Anchor, repo_path: str | None, stack: List[Path]) -> Path:
     """Return a Charon repository to inspect, cloning one if none was supplied.
 
+    A supplied checkout is used as-is: the parity check only reads the pinned
+    anchor commit, so it must work offline and must not touch the checkout's
+    refs. A check that needs the current branch head fetches it explicitly with
+    `fetch_branch_head`.
+
     Any directory created is appended to `stack` for the caller to clean up.
     """
     if repo_path:
@@ -190,13 +222,24 @@ def resolve_repo(anchor: Anchor, repo_path: str | None, stack: List[Path]) -> Pa
         if not (path / ".git").exists():
             raise CharonRepoError(f"{path} is not a git repository")
 
-        # A local checkout can be on any branch and arbitrarily out of date.
-        run_git(["fetch", "--quiet", "origin", anchor.branch], cwd=path)
         return path
 
     temporary = Path(tempfile.mkdtemp(prefix="charon-drift-"))
     stack.append(temporary)
     return clone_charon(anchor, temporary / "charon")
+
+
+def fetch_branch_head(anchor: Anchor, repo: Path) -> str:
+    """Fetch the tracked branch from the anchor's repository URL and return its sha.
+
+    Fetching from `anchor.repo` rather than `origin` matters for a local
+    checkout: its `origin` can point at a fork whose branch is arbitrarily
+    stale, and measuring drift against a stale fork reports a clean spec that
+    is anything but. `FETCH_HEAD` is plain fetch metadata, so the checkout's
+    own remote-tracking refs are left untouched.
+    """
+    run_git(["fetch", "--quiet", anchor.repo, anchor.branch], cwd=repo)
+    return run_git(["rev-parse", "FETCH_HEAD"], cwd=repo).strip()
 
 
 def read_file_at(repo: Path, commit: str, path: str) -> str:

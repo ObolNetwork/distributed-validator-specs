@@ -22,7 +22,7 @@ README_PATH = REPO_ROOT / "README.md"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from charon_repo import Anchor  # noqa: E402
+from charon_repo import Anchor, CharonRepoError  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -106,6 +106,26 @@ def test_ignored_file_does_not_shadow_its_directory(anchor: Anchor) -> None:
     # must not let the ignore entry swallow neighbours that merely share a stem.
     assert not anchor.is_watched("core/deadline.go")
     assert anchor.is_watched("core/deadliner_that_does_not_exist.go")
+    # A file entry is an exact match, not a prefix: a neighbour that extends the
+    # ignored name is still watched.
+    assert anchor.is_watched("core/deadline.gogen")
+
+
+def test_malformed_anchor_raises_the_check_error(tmp_path: Path) -> None:
+    # Both check scripts distinguish "could not run" (exit 2) from "found
+    # something" (exit 1) by catching CharonRepoError; a raw JSON or key error
+    # would escape as exit 1 and read as a real finding.
+    not_json = tmp_path / "anchor.json"
+    not_json.write_text("{ this is not json")
+
+    with pytest.raises(CharonRepoError, match="cannot load anchor"):
+        Anchor.load(not_json)
+
+    missing_key = tmp_path / "incomplete.json"
+    missing_key.write_text(json.dumps({"repo": "x", "branch": "main"}))
+
+    with pytest.raises(CharonRepoError, match="cannot load anchor"):
+        Anchor.load(missing_key)
 
 
 def test_anchor_file_is_sorted_and_deduplicated() -> None:

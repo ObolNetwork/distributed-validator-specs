@@ -19,7 +19,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from charon_repo import Anchor, ProtoPair  # noqa: E402
+import check_proto_parity as proto_parity  # noqa: E402
+from charon_repo import (  # noqa: E402
+    EXIT_ERROR,
+    EXIT_FOUND,
+    EXIT_OK,
+    Anchor,
+    CharonRepoError,
+    ProtoPair,
+)
 from check_proto_parity import (  # noqa: E402
     ProtoParseError,
     ProtoSchema,
@@ -218,6 +226,12 @@ def pair(
             "message Msg {\n  int64 slot = 1;\n  Item items = 2;\n}",
             "Charon has `repeated Item items = 2`",
         ),
+        # A changed scalar type keeps the name and number, so only the type
+        # comparison sees it — and sint64 is a zigzag encoding, wire-fatal.
+        (
+            "message Msg {\n  sint64 slot = 1;\n  repeated Item items = 2;\n}",
+            "Charon has `int64 slot = 1`",
+        ),
     ],
 )
 def test_field_divergences_are_reported(spec_source: str, expected: str) -> None:
@@ -265,3 +279,112 @@ def test_package_divergence_is_reported_once() -> None:
 
     assert len(findings) == 1
     assert "package is `(none)`" in findings[0]
+
+
+def test_reserved_divergence_is_reported() -> None:
+    # Reserved numbers are wire contract: a spec that stops reserving what
+    # Charon reserves licenses reuse of a retired field number.
+    spec = parse_proto(
+        "proto/t.proto",
+        SPEC_SIDE.replace("message Msg {\n", "message Msg {\n  reserved 3;\n"),
+    )
+
+    findings = compare_schemas(pair(), spec, parse_proto("c.proto", CHARON_SIDE))
+
+    assert findings == ["`Msg` reserves [3], Charon reserves []"]
+
+
+def test_message_absent_from_charon_is_reported() -> None:
+    spec = parse_proto("proto/t.proto", SPEC_SIDE + "message Invented {\n  bool x = 1;\n}\n")
+
+    findings = compare_schemas(pair(), spec, parse_proto("c.proto", CHARON_SIDE))
+
+    assert findings == ["`Invented` is defined here but not by Charon"]
+
+
+# --- self-consistency and coverage, on failing inputs -------------------------
+#
+# The real-file tests above assert these return []; if either regressed to
+# always returning [], those tests would stay green while a broken or unmapped
+# proto ships silently. Each failure branch needs to fire at least once.
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "message A {\n  google.protobuf.Any x = 1;\n}",
+            "uses `google.protobuf.Any` without importing `google/protobuf/any.proto`",
+        ),
+        (
+            "message A {\n  Missing x = 1;\n}",
+            "references `Missing`, which no spec proto defines",
+        ),
+        (
+            'import "google/protobuf/any.proto";\nmessage A {\n  bool x = 1;\n}',
+            "imports `google/protobuf/any.proto` but uses nothing from it",
+        ),
+    ],
+)
+def test_consistency_findings_fire(source: str, expected: str) -> None:
+    schema = parse_proto("proto/t.proto", f'syntax = "proto3";\npackage a.v1;\n{source}\n')
+
+    findings = check_spec_consistency([schema])
+
+    assert findings == [f"`t.proto` {expected}"]
+
+
+def test_cross_file_reference_requires_an_import() -> None:
+    shared = 'syntax = "proto3";\npackage a.v1;\n'
+    defining = parse_proto("proto/other.proto", shared + "message Other {\n  bool x = 1;\n}\n")
+    using = parse_proto("proto/t.proto", shared + "message A {\n  Other o = 1;\n}\n")
+
+    findings = check_spec_consistency([defining, using])
+
+    assert findings == ["`t.proto` references `Other` without importing `other.proto`"]
+
+
+def test_proto_dir_coverage_reports_both_directions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    proto_dir = tmp_path / "proto"
+    (proto_dir / "sub").mkdir(parents=True)
+    (proto_dir / "mapped.proto").write_text("")
+    (proto_dir / "unmapped.proto").write_text("")
+    # In a subdirectory, which must not be a blind spot: the scan is recursive.
+    (proto_dir / "sub" / "nested.proto").write_text("")
+
+    monkeypatch.setattr(proto_parity, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(proto_parity, "PROTO_DIR", proto_dir)
+
+    findings = check_proto_dir_coverage(
+        (
+            ProtoPair(spec="proto/mapped.proto", charon="a", not_mirrored=(), why_not_mirrored=""),
+            ProtoPair(spec="proto/gone.proto", charon="b", not_mirrored=(), why_not_mirrored=""),
+        )
+    )
+
+    assert any("proto/unmapped.proto" in item and "nothing checks it" in item for item in findings)
+    assert any("proto/sub/nested.proto" in item for item in findings)
+    assert any("proto/gone.proto" in item and "does not exist" in item for item in findings)
+
+
+def test_main_maps_results_to_the_exit_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The exit code is the whole interface with the CI workflow: findings
+    # printed but exit 0 is a green check that verified nothing.
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr(proto_parity, "resolve_repo", lambda anchor, path, stack: Path("."))
+
+    monkeypatch.setattr(proto_parity, "collect_findings", lambda anchor, repo: ({"scope": []}, []))
+    assert proto_parity.main([]) == EXIT_OK
+
+    monkeypatch.setattr(
+        proto_parity, "collect_findings", lambda anchor, repo: ({"scope": ["diverged"]}, [])
+    )
+    assert proto_parity.main([]) == EXIT_FOUND
+
+    def unreachable(anchor: Anchor, repo: Path) -> tuple[dict[str, list[str]], list[str]]:
+        raise CharonRepoError("network unreachable")
+
+    monkeypatch.setattr(proto_parity, "collect_findings", unreachable)
+    assert proto_parity.main([]) == EXIT_ERROR
