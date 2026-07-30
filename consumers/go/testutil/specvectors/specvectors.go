@@ -10,9 +10,9 @@
 // produced by Charon in the first place, which makes these regression tests
 // against the specification rather than snapshots of it.
 //
-// Refresh with:
-//
-//	go run ./testutil/specvectors/cmd/updatevectors  # or see the README
+// Refreshing the artifact is deliberately manual — build a release in a spec
+// checkout (`uv run python scripts/build_release.py`), copy it into
+// testdata/spec/, and update PinnedSpecVersion in the same change.
 //
 // This package only finds and version-checks the artifact. Each suite's shape
 // belongs to the test that consumes it, so that a test reads as one thing rather
@@ -74,7 +74,8 @@ type Manifest struct {
 // Behaviour is a specified behaviour and the first Charon release carrying it.
 type Behaviour struct {
 	Name string `json:"name"`
-	// FirstCharonRelease is nil for behaviour that exists only on Charon main.
+	// FirstCharonRelease is nil for behaviour no final Charon release carries —
+	// only main or a release candidate has it; Note says which.
 	FirstCharonRelease *string `json:"first_charon_release"`
 	// FirstCharonReleaseSemver is the comparable form. Charon's tags do not order
 	// as strings: "v1.11.0" < "v1.9.0" lexically.

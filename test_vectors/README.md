@@ -61,9 +61,9 @@ Cases in these suites carry:
 
 - `accepted` — whether the input must be accepted.
 - `reason` — `null` when accepted, otherwise a stable slug naming the rule that
-  fired: `too_many_justifications`, `too_many_values`, `share_idx_mismatch`,
-  `unknown_peer`, `missing_share_idx`. The slugs are the contract; the wording of
-  an error message is not.
+  fired: `too_many_justifications`, `too_many_values`, `msg_too_large`,
+  `share_idx_mismatch`, `unknown_peer`, `missing_share_idx`. The slugs are the
+  contract; the wording of an error message is not.
 
 Two conventions are worth knowing:
 
@@ -119,18 +119,22 @@ spec:
 
 - `qbft_decided_resends.json` event sequences and counts are transcribed from
   Charon's `core/qbft/qbft_internal_test.go` `TestDecidedRebroadcastLimits`
-  subtests, and `parsigex_sender_binding.json` from
-  `dkg/exchanger_internal_test.go` `TestVerifyPeerShareIdx` and
-  `TestNewExchangerRejectsIncompletePeerMap`. The generator replays each through
-  the spec and fails on any disagreement, so these are Charon's own tables rather
-  than the spec's opinion of them.
+  subtests, and `parsigex_sender_binding.json`'s six sender cases from
+  `dkg/exchanger_internal_test.go` `TestVerifyPeerShareIdx`, one for one. Of the
+  peer-map cases, only the missing-peer rejection is Charon's
+  (`TestNewExchangerRejectsIncompletePeerMap` has exactly that one case); the
+  accepted map and the non-positive-index rejection are spec-added boundaries
+  around the same `newExchanger` rule. The generator replays every case through
+  the spec and fails on any disagreement.
 
-`qbft_msg_limits.json` is `source: spec` for a specific reason: Charon has no
-table test for `verifyMsgLimits`, so the cases are boundary pairs the spec derives
-from Charon's formulas (`maxJust = 2*nodes`, `maxValues = 2*(justifications+1)`)
-and constants (`maxConsensusMsgSize`, and `p2p/sender.go`'s 128 MiB default that
-consensus overrides). The formulas were read from Charon; the choice of which
-boundaries to test was not.
+`qbft_msg_limits.json` is `source: spec`: the cases are boundary pairs the spec
+derives from Charon's formulas (`maxJust = 2*nodes`, `maxValues =
+2*(justifications+1)`) and constants (`maxConsensusMsgSize`, and
+`p2p/sender.go`'s 128 MiB default that consensus overrides), not values Charon
+emitted. Charon's own `TestQBFTConsensusHandleAmplificationLimits` pins the same
+at/over boundaries for a one-node cluster; the suite re-derives them for 3-, 4-
+and 7-node clusters and adds the both-limits-exceeded precedence case and the
+wire-size pairs, which Charon does not table.
 
 To reproduce a Go-generated suite: copy the generator's directory into a Charon
 checkout at the `charon_ref` commit as `zz_spec_vectors/`, run
@@ -140,9 +144,11 @@ one directory they would not compile. The cluster generator reads Charon's
 testdata by relative path, so it must be run from the checkout root.
 
 Note that `cluster_hashing.json` records a `charon_ref` one commit ahead of the
-other suites. That commit touches only `p2p/sender_test.go`, so `cluster/` is
-identical at both; the field records where the suite was actually generated rather
-than the repository's overall anchor.
+`2eb6798e` every other original suite records. That commit touches only
+`p2p/sender_test.go`, so `cluster/` is identical at both; the field records where
+the suite was actually generated rather than the repository's overall anchor. The
+three rejection suites record the current anchor (`6054bcb2`), which is where
+their tables were transcribed from.
 
 `source: spec` means this spec computed the values from its reading of Charon's
 source. `timer_deadlines.json` is in this category: the deadlines are plain

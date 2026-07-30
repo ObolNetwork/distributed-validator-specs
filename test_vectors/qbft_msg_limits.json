@@ -5,7 +5,7 @@
     "source": "spec",
     "charon_ref": "6054bcb2dc9be9a2d4244564ffdd0f2d1b7a09fd",
     "generated_by": "scripts/generate_test_vectors.py",
-    "note": "Derived from charon's core/consensus/qbft/qbft.go: verifyMsgLimits for the counts and maxConsensusMsgSize for the wire size. Charon has no table test for these, so the cases are the spec's own boundary pairs around charon's formulas; this script fails if the spec's verdict differs from the table."
+    "note": "Derived from charon's core/consensus/qbft/qbft.go: verifyMsgLimits for the counts and maxConsensusMsgSize for the wire size. The cases are the spec's boundary pairs around charon's formulas \u2014 charon's own TestQBFTConsensusHandleAmplificationLimits pins the same at/over boundaries for a one-node cluster \u2014 and this script fails if the spec's verdict differs from the table."
   },
   "counts": [
     {
@@ -147,28 +147,32 @@
       "input": {
         "wire_size_bytes": 1024
       },
-      "accepted": true
+      "accepted": true,
+      "reason": null
     },
     {
       "name": "at_limit",
       "input": {
         "wire_size_bytes": 33554432
       },
-      "accepted": true
+      "accepted": true,
+      "reason": null
     },
     {
       "name": "one_byte_over_limit",
       "input": {
         "wire_size_bytes": 33554433
       },
-      "accepted": false
+      "accepted": false,
+      "reason": "msg_too_large"
     },
     {
       "name": "p2p_default_read_limit",
       "input": {
         "wire_size_bytes": 134217728
       },
-      "accepted": false
+      "accepted": false,
+      "reason": "msg_too_large"
     }
   ]
 }

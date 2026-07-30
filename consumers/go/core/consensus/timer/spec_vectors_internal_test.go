@@ -101,15 +101,12 @@ func TestSpecRoundDeadlineFires(t *testing.T) {
 			genesis := time.Unix(0, tt.Input.GenesisTimeNanos)
 			clock := clockwork.NewFakeClockAt(genesis)
 
-			// Built directly because no exported constructor takes a duty, the
-			// slot timing and a clock together.
-			timer := &doubleEagerLinearRoundTimer{
-				clock:          clock,
-				duty:           core.Duty{Slot: tt.Input.Slot, Type: core.DutyType(tt.Input.DutyType)},
-				genesisTime:    genesis,
-				slotDuration:   time.Duration(tt.Input.SlotDurationNanos),
-				firstDeadlines: make(map[int64]time.Time),
-			}
+			timer := NewDoubleEagerLinearRoundTimerWithDutyTimingAndClock(
+				core.Duty{Slot: tt.Input.Slot, Type: core.DutyType(tt.Input.DutyType)},
+				genesis,
+				time.Duration(tt.Input.SlotDurationNanos),
+				clock,
+			)
 
 			expiry, stop := timer.Timer(tt.Input.Round)
 			defer stop()

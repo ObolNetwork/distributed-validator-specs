@@ -76,16 +76,21 @@ func TestSpecDecidedResends(t *testing.T) {
 				Receive: recv,
 			}
 
+			runErr := make(chan error, 1)
 			go func() {
-				_ = Run(ctx, def, trans, 0, 0, make(chan int64), make(chan int64))
+				runErr <- Run(ctx, def, trans, 0, 0, make(chan int64), make(chan int64))
 			}()
 
 			// The receive channel is unbuffered, so a send only returns once the
 			// instance has finished processing every earlier message. That is what
-			// makes the count deterministic.
+			// makes the count deterministic. An early Run exit is surfaced as its
+			// own failure: without this, it reads as a send timeout with the root
+			// cause discarded.
 			send := func(m msg) {
 				select {
 				case recv <- m:
+				case err := <-runErr:
+					require.Failf(t, "qbft instance exited mid-sequence", "%v", err)
 				case <-time.After(5 * time.Second):
 					require.Fail(t, "timeout sending to the qbft instance")
 				}

@@ -66,6 +66,17 @@ def write(suite: str, data: Dict[str, Any]) -> None:
     print(f"wrote {path.relative_to(REPO_ROOT)}")
 
 
+def require(condition: bool, message: str) -> None:
+    """Abort generation when the spec disagrees with Charon's tables.
+
+    Not `assert`: the provenance notes promise this script fails on any
+    disagreement, and `python -O` strips asserts silently — the vectors would
+    then record the spec's wrong output as Charon-verified.
+    """
+    if not condition:
+        raise SystemExit(f"refusing to generate vectors: {message}")
+
+
 def timer_deadlines() -> Dict[str, Any]:
     """Round deadline table for the eager double linear timer."""
     # 12s mainnet, 5s Gnosis Chain (not divisible by three, so it pins the
@@ -203,10 +214,11 @@ def priority_scoring() -> Dict[str, Any]:
         order = [scored.priority for scored in topic_result.priorities]
         scores = [scored.score for scored in topic_result.priorities]
 
-        assert order == expected_order, f"{name}: got {order}, charon expects {expected_order}"
+        require(order == expected_order, f"{name}: got {order}, charon expects {expected_order}")
         if expected_order:
-            assert scores == expected_scores, (
-                f"{name}: got {scores}, charon expects {expected_scores}"
+            require(
+                scores == expected_scores,
+                f"{name}: got {scores}, charon expects {expected_scores}",
             )
 
         cases.append(
@@ -255,6 +267,7 @@ def priority_scoring() -> Dict[str, Any]:
 
 TOO_MANY_JUSTIFICATIONS = "too_many_justifications"
 TOO_MANY_VALUES = "too_many_values"
+MSG_TOO_LARGE = "msg_too_large"
 
 # (name, nodes, justifications, values, expected reason or None to accept).
 # Charon: maxJust = 2*nodes, maxValues = 2*(justifications+1), justifications
@@ -285,7 +298,7 @@ size the protocol permits, so the vectors pin the override rather than the defau
 """
 
 
-def limit_msg(nodes: int, justifications: int, values: int) -> QBFTConsensusMsg:
+def limit_msg(justifications: int, values: int) -> QBFTConsensusMsg:
     """Build a consensus message with the given justification and value counts."""
     duty = Duty(slot=1, type=DutyType.ATTESTER)
     template = QBFTMsg(type=MsgType.PREPARE, duty=duty, peer_idx=0, round=1)
@@ -297,17 +310,32 @@ def limit_msg(nodes: int, justifications: int, values: int) -> QBFTConsensusMsg:
     )
 
 
+def limit_reason(error: ValueError) -> str:
+    """Classify a limit rejection by its exact rule, refusing anything else.
+
+    A substring guess would launder an unrelated `ValueError` (pydantic's
+    `ValidationError` included) into an expected verdict, publishing a reason
+    nothing ever checked.
+    """
+    if "too many justifications" in str(error):
+        return TOO_MANY_JUSTIFICATIONS
+    if "too many values" in str(error):
+        return TOO_MANY_VALUES
+
+    raise SystemExit(f"refusing to generate vectors: unexpected rejection: {error}")
+
+
 def qbft_msg_limits() -> Dict[str, Any]:
     """Justification, value and wire-size limits on an incoming consensus message."""
     counts = []
     for name, nodes, justifications, values, reason in MSG_LIMIT_TABLE:
         try:
-            verify_msg_limits(limit_msg(nodes, justifications, values), nodes)
+            verify_msg_limits(limit_msg(justifications, values), nodes)
             got: str | None = None
         except ValueError as error:
-            got = TOO_MANY_JUSTIFICATIONS if "justifications" in str(error) else TOO_MANY_VALUES
+            got = limit_reason(error)
 
-        assert got == reason, f"{name}: spec says {got}, charon's rules say {reason}"
+        require(got == reason, f"{name}: spec says {got}, charon's rules say {reason}")
 
         counts.append(
             {
@@ -332,8 +360,15 @@ def qbft_msg_limits() -> Dict[str, Any]:
     ]
     sizes = []
     for name, size, accepted in wire_size:
-        assert (size <= MAX_CONSENSUS_MSG_SIZE) == accepted, f"{name}: spec disagrees"
-        sizes.append({"name": name, "input": {"wire_size_bytes": size}, "accepted": accepted})
+        require((size <= MAX_CONSENSUS_MSG_SIZE) == accepted, f"{name}: spec disagrees")
+        sizes.append(
+            {
+                "name": name,
+                "input": {"wire_size_bytes": size},
+                "accepted": accepted,
+                "reason": None if accepted else MSG_TOO_LARGE,
+            }
+        )
 
     return {
         "suite": "qbft_msg_limits",
@@ -351,10 +386,11 @@ def qbft_msg_limits() -> Dict[str, Any]:
             "generated_by": "scripts/generate_test_vectors.py",
             "note": (
                 "Derived from charon's core/consensus/qbft/qbft.go: verifyMsgLimits for "
-                "the counts and maxConsensusMsgSize for the wire size. Charon has no "
-                "table test for these, so the cases are the spec's own boundary pairs "
-                "around charon's formulas; this script fails if the spec's verdict "
-                "differs from the table."
+                "the counts and maxConsensusMsgSize for the wire size. The cases are the "
+                "spec's boundary pairs around charon's formulas — charon's own "
+                "TestQBFTConsensusHandleAmplificationLimits pins the same at/over "
+                "boundaries for a one-node cluster — and this script fails if the "
+                "spec's verdict differs from the table."
             ),
         },
         "counts": counts,
@@ -431,7 +467,7 @@ def qbft_decided_resends() -> Dict[str, Any]:
             )
             allowed.append(bool(responses))
 
-        assert allowed == expected, f"{name}: spec allowed {allowed}, charon expects {expected}"
+        require(allowed == expected, f"{name}: spec allowed {allowed}, charon expects {expected}")
 
         cases.append(
             {
@@ -501,9 +537,16 @@ def parsigex_sender_binding() -> Dict[str, Any]:
             verify_peer_share_idx(SENDER_BINDING_PEER_MAP, sender, data)
             got: str | None = None
         except ValueError as error:
-            got = UNKNOWN_PEER if "unknown peer" in str(error) else SHARE_IDX_MISMATCH
+            if "unknown peer" in str(error):
+                got = UNKNOWN_PEER
+            elif "does not match sender peer" in str(error):
+                got = SHARE_IDX_MISMATCH
+            else:
+                raise SystemExit(
+                    f"refusing to generate vectors: unexpected rejection: {error}"
+                ) from error
 
-        assert got == reason, f"{name}: spec says {got}, charon expects {reason}"
+        require(got == reason, f"{name}: spec says {got}, charon expects {reason}")
 
         cases.append(
             {
@@ -532,10 +575,16 @@ def parsigex_sender_binding() -> Dict[str, Any]:
         try:
             validate_exchange_peers(peers, share_idx_by_peer, 0)
             rejected = False
-        except ValueError:
+        except ValueError as error:
+            # The published reason is missing_share_idx, so the rejection must
+            # actually be that rule — not, say, the peer-index bounds check.
+            require(
+                "missing valid share index" in str(error),
+                f"{name}: unexpected rejection: {error}",
+            )
             rejected = True
 
-        assert rejected != accepted, f"{name}: spec disagrees"
+        require(rejected != accepted, f"{name}: spec disagrees")
 
         peer_map_cases.append(
             {
@@ -573,12 +622,21 @@ def parsigex_sender_binding() -> Dict[str, Any]:
 
 
 def main() -> None:
-    """Regenerate every spec-computed suite."""
-    write("timer_deadlines", timer_deadlines())
-    write("priority_scoring", priority_scoring())
-    write("qbft_msg_limits", qbft_msg_limits())
-    write("qbft_decided_resends", qbft_decided_resends())
-    write("parsigex_sender_binding", parsigex_sender_binding())
+    """Regenerate every spec-computed suite.
+
+    Every suite is computed before any is written, so a disagreement with
+    Charon's tables aborts with the working tree untouched rather than with
+    some suites rewritten and others stale.
+    """
+    suites = {
+        "timer_deadlines": timer_deadlines(),
+        "priority_scoring": priority_scoring(),
+        "qbft_msg_limits": qbft_msg_limits(),
+        "qbft_decided_resends": qbft_decided_resends(),
+        "parsigex_sender_binding": parsigex_sender_binding(),
+    }
+    for name, data in suites.items():
+        write(name, data)
 
 
 if __name__ == "__main__":

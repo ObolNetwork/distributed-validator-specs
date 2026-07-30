@@ -156,7 +156,7 @@ def test_priority_scoring(case: Dict[str, Any]) -> None:
             peer_id=peer["peer_id"],
             topics=[
                 PriorityTopicProposal(topic=inputs["topic"], priorities=peer["priorities"]),
-                PriorityTopicProposal(topic="ignored", priorities=[]),
+                PriorityTopicProposal(topic=inputs["ignored_topic"], priorities=[]),
             ],
         )
         for peer in inputs["peers"]
@@ -168,6 +168,12 @@ def test_priority_scoring(case: Dict[str, Any]) -> None:
     assert [
         {"priority": scored.priority, "score": scored.score} for scored in topic_result.priorities
     ] == case["result"]
+
+    # The empty topic every peer proposes must survive into the result with no
+    # priorities — dropped-topic and nothing-met-the-threshold are different
+    # outcomes, and the suite pins the distinction.
+    ignored = next(topic for topic in result.topics if topic.topic == inputs["ignored_topic"])
+    assert ignored.priorities == []
 
 
 def test_priority_scoring_is_independent_of_message_order() -> None:
@@ -414,7 +420,10 @@ def test_cluster_lock_reuses_the_bls_threshold_sharing() -> None:
 # These consume the vectors the way an implementation would: every input is built
 # from the case's `input` object, not from the helper that generated it. Sharing a
 # builder with `scripts/generate_test_vectors.py` would let a wrong count agree
-# with itself.
+# with itself. One overlap remains: the decided-resends replay forges its decided
+# state by planting a commit quorum, the same technique the generator uses, so a
+# change to how the spec detects decision moves both together. The Go consumer
+# suite drives a real instance to decision instead.
 
 LIMITS = "qbft_msg_limits"
 RESENDS = "qbft_decided_resends"
@@ -424,6 +433,12 @@ BINDING = "parsigex_sender_binding"
 @pytest.mark.parametrize("case", cases(LIMITS, "counts"))
 def test_qbft_msg_limit_counts(case: Dict[str, Any]) -> None:
     inputs = case["input"]
+
+    # The limits the case ships as guidance must be charon's formulas, or an
+    # implementer trusting the metadata is misled even when the verdict is right.
+    assert case["max_justifications"] == 2 * inputs["nodes"]
+    assert case["max_values"] == 2 * (inputs["justification_count"] + 1)
+
     duty = Duty(slot=1, type=DutyType.ATTESTER)
     template = QBFTMsg(type=MsgType.PREPARE, duty=duty, peer_idx=0, round=1)
     consensus_msg = QBFTConsensusMsg(
@@ -449,6 +464,7 @@ def test_qbft_msg_limit_counts(case: Dict[str, Any]) -> None:
 @pytest.mark.parametrize("case", cases(LIMITS, "wire_size"))
 def test_qbft_msg_wire_size_limit(case: Dict[str, Any]) -> None:
     assert (case["input"]["wire_size_bytes"] <= MAX_CONSENSUS_MSG_SIZE) == case["accepted"]
+    assert case["reason"] == (None if case["accepted"] else "msg_too_large")
 
 
 @pytest.mark.parametrize("case", cases(RESENDS, "cases"))
@@ -483,22 +499,27 @@ def test_qbft_decided_resends(case: Dict[str, Any]) -> None:
         for index in range(nodes - 1)
     ]
 
-    rebroadcast = [
-        bool(
-            consensus.handle_message(
-                QBFTConsensusMsg(
-                    msg=QBFTMsg(
-                        type=MsgType.ROUND_CHANGE,
-                        duty=duty,
-                        peer_idx=event["source"],
-                        round=event["round"],
-                        signature=b"0" * 65,
-                    )
+    rebroadcast = []
+    for event in inputs["events"]:
+        responses = consensus.handle_message(
+            QBFTConsensusMsg(
+                msg=QBFTMsg(
+                    type=MsgType.ROUND_CHANGE,
+                    duty=duty,
+                    peer_idx=event["source"],
+                    round=event["round"],
+                    signature=b"0" * 65,
                 )
             )
         )
-        for event in inputs["events"]
-    ]
+        # What comes back must be the decision itself — the decided value under
+        # a DECIDED type, justified by the commit quorum — not merely something.
+        for response in responses:
+            assert response.msg.type == MsgType.DECIDED
+            assert response.msg.value_hash == hash_value(proposal_value)
+            assert response.justification == consensus.q_commit
+
+        rebroadcast.append(bool(responses))
 
     assert rebroadcast == case["rebroadcast"]
     assert sum(rebroadcast) == case["total_rebroadcasts"]

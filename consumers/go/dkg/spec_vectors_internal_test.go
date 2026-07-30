@@ -95,6 +95,10 @@ func TestSpecParSigExSenderBinding(t *testing.T) {
 			}
 
 			require.Error(t, err)
+			// Charon folds both peer-map defects — a peer absent from the map and
+			// one assigned a non-positive index — into this one rule, which is why
+			// every rejection in the group carries the same slug.
+			require.Equal(t, "missing_share_idx", tt.Reason)
 			require.ErrorContains(t, err, "missing valid share index")
 		})
 	}

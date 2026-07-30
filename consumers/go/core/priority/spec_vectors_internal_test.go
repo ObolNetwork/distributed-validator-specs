@@ -133,10 +133,10 @@ func topicProposal(t *testing.T, topic string, priorities []string) *pbv1.Priori
 	return proposal
 }
 
-// topicResult returns the scored priorities for one topic, or nil if the topic is
-// absent. It distinguishes absent from empty via a separate presence check, since
-// "no priorities met the threshold" and "the topic was dropped" are different
-// outcomes.
+// topicResult returns the scored priorities for one topic, failing the test if
+// the topic is absent from the result. Absence is its own failure rather than an
+// empty return, since "no priorities met the threshold" and "the topic was
+// dropped" are different outcomes.
 func topicResult(t *testing.T, result *pbv1.PriorityResult, topic string) []*pbv1.PriorityScoredResult {
 	t.Helper()
 
