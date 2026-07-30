@@ -114,6 +114,12 @@ reception. Such a peer's partial signatures are rejected as coming from an
 unknown peer, which does not surface as a validation failure — the exchange
 simply never reaches its threshold and times out.
 
+[`test_vectors/parsigex_sender_binding.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/parsigex_sender_binding.json)
+carries charon's own accept/reject table for both checks. Its peer map assigns
+share index 4 to the *second* peer, which is the case that separates a
+map-based implementation from a position-based one: a position-derived
+expectation of 2 accepts what charon rejects and rejects what it accepts.
+
 ## Verification
 
 Partial signature verification follows the Ethereum consensus layer signature specification:

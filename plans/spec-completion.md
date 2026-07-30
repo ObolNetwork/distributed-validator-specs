@@ -295,6 +295,43 @@ Also fixed in this pass:
      before use" sequence, and the vector pointers. `hashing.md` no longer claims
      every DV hash is over protobuf bytes.
 
+   Rejection vectors (DONE, 2026-07-30) — three suites, promoted out of
+   Aspirations. Every suite above passes by *producing a value*, which left the
+   reject rules unpinned: an implementation could pass all six while accepting a
+   128 MiB consensus message or a partial signature deposited into another
+   operator's share slot. Under-rejecting is a DoS hole, over-rejecting breaks
+   liveness against charon, and neither had a fixture.
+   - [x] `test_vectors/qbft_msg_limits.json` — the Phase 1 QBFT hardening as
+     accept/reject pairs either side of each boundary: justifications ≤ 2n,
+     values ≤ 2(j+1), 32 MiB wire size. Each case names *which* limit fired,
+     because charon checks justifications before values, so a message exceeding
+     both is rejected for its justifications; two implementations that reject the
+     same inputs for different reasons have not agreed on the protocol. The wire
+     size is pinned as a **narrowing** of charon's 128 MiB libp2p default
+     (`p2p/sender.go`), which consensus overrides — leaving the default in place
+     accepts messages four times the permitted size. `source: spec`, because
+     charon has no table test for `verifyMsgLimits`: the formulas are charon's,
+     the choice of boundaries is not.
+   - [x] `test_vectors/qbft_decided_resends.json` — charon's own
+     `TestDecidedRebroadcastLimits` event sequences, with the expected rebroadcast
+     decision per event rather than a total, so an implementation missing either
+     half of the rule (strictly-increasing round, or the 16-per-source cap) fails a
+     specific event. Counted as rebroadcast *events*, not messages, since the spec
+     returns one message per peer where charon calls `Broadcast` once — a total
+     would have encoded an implementation shape.
+   - [x] `test_vectors/parsigex_sender_binding.json` — charon's
+     `TestVerifyPeerShareIdx` table plus `TestNewExchangerRejectsIncompletePeerMap`.
+     The peer map assigns share index 4 to the *second* peer, which is the case
+     that separates a map-based implementation from a position-based one.
+
+   The generator replays every charon-transcribed case through the spec and fails
+   on disagreement, so these suites are charon's tables rather than the spec's
+   opinion of them. `tests/test_vectors.py` builds each input from the case's own
+   `input` object rather than sharing the generator's builders — a shared builder
+   would let a wrong count agree with itself — and asserts each suite still carries
+   both verdicts, since a suite that drifted to all-accept would pass every case
+   while testing nothing.
+
    Still outstanding:
    - Publishing as versioned release artifacts, which depends on the versioning
      policy under Aspirations.
@@ -458,8 +495,6 @@ against charon — 57 hand-built edge cases, 400 randomized definitions, three
 
 ## Aspirations (agreed, later)
 
-- **Adversarial/negative vectors**: oversized justification → reject,
-  decided-resend flood → rate-limit; doubles as security regression tests.
 - **Differential fuzzing**: random QBFT message sequences into spec-Python,
   charon-Go, pluto-Rust state machines; compare outputs.
 - **Pluto link-back**: one-line PR to pluto README/AGENTS.md referencing this

@@ -88,6 +88,18 @@ the reference implementation):
 - Justifications: at most `2 * n` per message
 - Values: at most `2 * (justifications + 1)` per message
 
+The justification count is checked **before** the value count, so a message
+exceeding both is rejected for its justifications. Implementations that agree on
+rejecting but not on why will disagree on this case.
+
+Note the wire size is a *narrowing* of the transport default: charon's libp2p
+reader allows 128 MiB and consensus overrides it to 32 MiB. Leaving the transport
+default in place accepts messages four times the size the protocol permits.
+
+[`test_vectors/qbft_msg_limits.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/qbft_msg_limits.json)
+pins all three limits as accept/reject pairs either side of each boundary, each
+naming which limit fired.
+
 **Decided messages:**
 
 `DECIDED` messages are optional since consensus is achieved upon quorum `COMMIT(r, V)`, however they can be used to help slow nodes catch up.
@@ -96,6 +108,13 @@ After deciding, a node responds to any ROUND-CHANGE from a peer by
 rebroadcasting `DECIDED` (helping lagging peers catch up), rate-limited to at
 most one rebroadcast per source per strictly-increasing round and at most 16
 rebroadcasts per source in total, to prevent amplification abuse.
+
+Both halves of that rule matter: without the strictly-increasing requirement a
+peer replays one round forever, and without the cap it mints ever-higher rounds.
+[`test_vectors/qbft_decided_resends.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/qbft_decided_resends.json)
+replays charon's own event sequences and gives the expected rebroadcast decision
+for each event, so an implementation missing either half fails a specific event
+rather than a total.
 
 ### Message Schemas
 
