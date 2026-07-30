@@ -20,7 +20,7 @@ Charon is the reference implementation these specs are derived from. Pluto is an
 ### Charon version anchor
 
 These specs track Charon `main` and were last validated against Charon
-commit `2eb6798e` (2026-07-14, after `v1.10.3`, during `v1.11.0` release
+commit `6054bcb2` (2026-07-29, after `v1.10.3`, during `v1.11.0` release
 candidates).
 
 Note for implementers pinned to older Charon versions (e.g. Pluto currently
@@ -32,10 +32,21 @@ targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
 | Deterministic (genesis-derived) eager double linear round deadlines | `v1.9.0`             |
 | Linear round timer subsequent-round timeout fix                     | `v1.11.0`            |
 | QBFT DECIDED-resend rate limit and message size/count limits        | `v1.11.0`            |
+| Preferred priority protocol ID `/charon/priority/2.0.0`             | unreleased (`main`)  |
+| Stable sort of scored priorities                                    | unreleased (`main`)  |
+| Sender-bound share indices in the DKG lock-hash exchange            | unreleased (`main`)  |
 
 All of these are backwards compatible on the wire (unknown proto fields are
 ignored; limits only reject messages no honest peer sends), so implementing
 the current spec remains interoperable with older Charon peers.
+
+The three unreleased entries need care in both directions. The legacy priority
+protocol ID `charon/priority/2.0.0` is the **only** one every released Charon
+speaks, so it must still be served alongside the preferred spelling; Charon's own
+code targets `v1.12` for the preferred ID and `v1.14` for dropping the alias. The
+stable sort only changes results for a tie among thirteen or more priorities in a
+topic, which no released Charon produces. The sender binding rejects only
+partial signatures no honest peer sends.
 
 ## What's Included
 

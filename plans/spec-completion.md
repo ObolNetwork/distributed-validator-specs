@@ -1,19 +1,18 @@
 # Spec Completion Plan
 
-Status as of 2026-07-28. Goal: make this repo a formal spec of the Obol DV
+Status as of 2026-07-30. Goal: make this repo a formal spec of the Obol DV
 protocol (as implemented by charon) precise enough that pluto is assured of
 perfect interop with charon.
 
 Context anchors:
-- Spec validated against charon main @ `2eb6798e` (2026-07-14, during v1.11.0 RCs).
+- Spec validated against charon main @ `6054bcb2` (2026-07-29, during v1.11.0 RCs).
 - Pluto pins parity to charon **v1.7.1**, will come forward to charon main
   (and future versions) once complete to 1.7.1. Pluto does not consume this
   spec yet — its parity target is charon Go source (see pluto AGENTS.md).
-- Known normative quirk: priority protocol ID is `charon/priority/2.0.0`
-  (no leading slash) — accidental in charon, accommodated by pluto, now
-  documented in this spec. Do not "fix" unless charon versions the protocol.
-  (An unmerged charon branch `pinebit/fix-priority-slash` adds the slash with a
-  legacy alias; the spec stays on the no-slash form until that lands on main.)
+- Priority now has **two** protocol IDs: `/charon/priority/2.0.0` preferred and
+  `charon/priority/2.0.0` (no leading slash) as a legacy alias. Both must be
+  served — the legacy form is the only one any released charon speaks. See
+  Phase 1.1.
 
 ## Phase 1 — Un-stale (DONE, this PR)
 
@@ -32,6 +31,55 @@ Context anchors:
 - [x] Pluto mentions (README Implementations table, docs/index.md)
 - [ ] Deliberately skipped: cluster definition doc stays at v1.10 (per Oisín,
       v1.10 is the target for now; charon is on v1.11 — revisit later)
+
+## Phase 1.1 — Re-anchor to charon main (DONE, 2026-07-30)
+
+Charon moved eight commits past the `2eb6798e` anchor before anyone noticed, so
+this is the drift Phase 3.3 exists to catch automatically. Found by reading a
+local charon checkout, not by any alarm. Three commits touched spec surface, all
+unreleased (charon's latest tag is `v1.11.0-rc1`, which contains none of them):
+
+- [x] **Priority protocol ID** (charon #4605, `3335e6eb`) — the leading-slash fix
+      this plan said it was waiting on has landed. `/charon/priority/2.0.0` is now
+      preferred, `charon/priority/2.0.0` is a legacy alias, and **both must be
+      served**: a dialler offers both with the slash form first, a listener
+      registers each separately as an exact match. Registering them together
+      under a common prefix collapses that prefix to bare `*`, which libp2p
+      identify then advertises in place of either real ID — specified in
+      `priority.md` because it is an interop trap, not an implementation detail.
+      Charon targets `v1.12` for the preferred ID and `v1.14` for alias removal.
+- [x] **Stable priority sort** (charon #4611, `6054bcb2`) — charon now uses
+      `slices.SortStableFunc`, so the divergence risk this plan recorded is gone.
+      The spec was already correct; the warning became a statement.
+- [x] **ParSigEx sender binding** (charon #4599, `7bcc511e`) — the handler passes
+      the authenticated libp2p sender to the verifier. The DKG lock-hash exchange
+      enforces that a peer may only contribute under its own assigned share index
+      (`verify_peer_share_idx`); the core workflow deliberately does not, since
+      those signatures are already verified against the pubshare for the claimed
+      index. Expected indices resolve through a **peer map**, not peer position,
+      because removal leaves survivors with gapped indices — the case that breaks
+      a position-derived implementation. Construction rejects a participant with
+      no assigned index (`validate_exchange_peers`), because otherwise its
+      signatures are dropped as unknown and the exchange silently times out.
+
+Assessed and ruled **out of scope**: charon #4610 (`7c0354f1`) raises the
+deadliner window for `DutySyncMessage`/`DutySyncContribution` to a full slot.
+That is `core/deadline.go`, and the deadliner is on the out-of-scope list below.
+The remaining four commits are dependency bumps and a flaky-test fix.
+
+Test vector `provenance.charon_ref` fields were deliberately **not** advanced:
+that field records where a suite was generated, none of this drift changes an
+expected value, and moving it without re-running the Go generators would assert
+a verification that never happened.
+
+### Correction made while doing the above
+
+- `priority.md` claimed ties between equal-scoring priorities are broken "by
+  their SSZ hash (deterministic, but arbitrary)". Wrong, and interop-relevant:
+  charon breaks ties by **first-seen order over messages sorted by ascending peer
+  ID** (`calculate.go` `SortStableFunc`). The hash sort applies to *topics*, which
+  the same page already stated correctly one section earlier. An implementation
+  following the old text would order priorities differently from charon.
 
 ## Phase 2 — Close interop-critical gaps (DONE except item 7)
 
@@ -274,10 +322,12 @@ by reading it:
   singular fields: an `UnsignedDataSet` entry with an empty value emits `0x1200`.
 - **An encoding of ≤32 bytes is not hashed at all** — `hash_proto` returns it
   zero-padded. `Duty{slot: 1, type: 2}` "hashes" to `0x0801100200…00`.
-- Charon's priority result ordering documents a tie-break by lowest peer ID, but
-  implements it with Go's `slices.SortFunc`, which is **not stable**. It holds
+- Charon's priority result ordering documented a tie-break by lowest peer ID but
+  implemented it with Go's `slices.SortFunc`, which is **not stable**. It held
   only because Go's pdqsort falls back to insertion sort below 13 elements. The
-  spec sorts stably and documents the divergence risk.
+  spec sorted stably and documented the divergence risk. **Resolved upstream** by
+  charon #4611 (`6054bcb2`), which switched to `slices.SortStableFunc`; see
+  Phase 1.1.
 - The duty start delay is **integer division at nanosecond resolution**
   (`time.Duration`), so a 5s slot (Gnosis Chain) gives an attester delay of
   1666666666ns. The spec's float helper was silently 0.33ns off; there is now an
@@ -351,8 +401,9 @@ against charon — 57 hand-built edge cases, 400 randomized definitions, three
 - **Proto parity CI**: buf breaking-change diff of `proto/` against charon's
   `core/corepb`/`dkg/dkgpb` at the pinned commit (would have caught the
   missing `nickname` field automatically).
-- Quirks registry doc: deferred until we accumulate more than the priority
-  slash + dkg-sync trailing slash.
+- Quirks registry doc: still deferred, and now thinner — the priority slash was
+  fixed upstream (Phase 1.1), leaving the dkg-sync trailing slash and the
+  priority legacy alias, which is scheduled for removal in charon `v1.14`.
 
 ## Explicitly out of scope for the spec
 

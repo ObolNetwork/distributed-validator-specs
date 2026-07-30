@@ -3,8 +3,10 @@
 import pytest
 
 from dv_spec.subspecs.priority import (
+    LEGACY_PROTOCOL_ID,
     MAX_PRIORITIES,
     PROTOCOL_ID,
+    PROTOCOLS,
     Duty,
     DutyType,
     PriorityMsg,
@@ -20,10 +22,28 @@ from dv_spec.subspecs.priority.helpers import extract_priority_values
 
 
 def test_protocol_id() -> None:
-    """Test protocol ID constant."""
-    # Deliberately missing the leading "/" — matches Charon's wire behavior
-    # (core/priority/prioritiser.go). See docs/dv-spec/priority.md.
-    assert PROTOCOL_ID == "charon/priority/2.0.0"
+    """The preferred ID is spelled like every other protocol in the spec."""
+    assert PROTOCOL_ID == "/charon/priority/2.0.0"
+    assert PROTOCOL_ID.startswith("/charon/")
+
+
+def test_legacy_protocol_id() -> None:
+    """The original ID has no leading "/" and is still served.
+
+    Every Charon release up to and including v1.11.0-rc1 speaks only this
+    spelling, so an implementation that dropped it could not exchange priorities
+    with any released Charon. See docs/dv-spec/priority.md.
+    """
+    assert LEGACY_PROTOCOL_ID == "charon/priority/2.0.0"
+    assert not LEGACY_PROTOCOL_ID.startswith("/")
+
+    # Same protocol, same version: the wire format is identical under either ID.
+    assert LEGACY_PROTOCOL_ID == PROTOCOL_ID.removeprefix("/")
+
+
+def test_protocols_precedence() -> None:
+    """Both IDs are offered, the slash-prefixed one first."""
+    assert PROTOCOLS == (PROTOCOL_ID, LEGACY_PROTOCOL_ID)
 
 
 def test_max_priorities() -> None:
