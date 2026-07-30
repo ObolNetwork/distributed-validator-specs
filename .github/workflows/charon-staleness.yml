@@ -1,0 +1,30 @@
+name: Charon staleness
+
+# The spec tracks Charon `main`, so it goes stale without anyone touching this
+# repository. Deliberately not run on pull requests: Charon drifting is not a
+# reason to block an unrelated PR. A failing scheduled run is the alarm.
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Spec surface changed in Charon since the anchor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout spec
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+          python-version: "3.13"
+
+      - name: Check for drift against Charon main
+        run: uv run python scripts/check_charon_drift.py

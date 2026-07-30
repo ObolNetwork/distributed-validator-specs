@@ -23,6 +23,13 @@ These specs track Charon `main` and were last validated against Charon
 commit `6054bcb2` (2026-07-29, after `v1.10.3`, during `v1.11.0` release
 candidates).
 
+The anchor is also recorded machine-readably in
+[`charon_anchor.json`](charon_anchor.json), alongside the Charon paths this spec
+covers. A weekly job runs
+[`scripts/check_charon_drift.py`](scripts/check_charon_drift.py) to report Charon
+commits past the anchor that touch those paths; run it yourself with
+`uv run python scripts/check_charon_drift.py`.
+
 Note for implementers pinned to older Charon versions (e.g. Pluto currently
 targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
 

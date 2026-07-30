@@ -1,0 +1,26 @@
+{
+  "repo": "https://github.com/ObolNetwork/charon",
+  "branch": "main",
+  "commit": "6054bcb2dc9be9a2d4244564ffdd0f2d1b7a09fd",
+  "date": "2026-07-29",
+  "note": "The Charon commit this spec was last validated against. Keep the short form in sync with the version anchor section of README.md; tests/test_charon_anchor.py enforces that.",
+  "watch_paths": [
+    "app/peerinfo/",
+    "cluster/",
+    "core/",
+    "dkg/",
+    "p2p/"
+  ],
+  "ignore_paths": [
+    "core/aggsigdb/",
+    "core/deadline.go",
+    "core/deadline_test.go",
+    "core/dutydb/",
+    "core/mocks/",
+    "core/retry.go",
+    "core/tracing.go",
+    "core/tracker/",
+    "core/tracking.go"
+  ],
+  "ignore_note": "Internal, non-wire-visible components the spec deliberately does not cover: dutydb, aggsigdb, the deadliner, the tracker (observability) and retry/tracing plumbing. See 'Explicitly out of scope for the spec' in plans/spec-completion.md. Everything else under watch_paths is reported, so a new subsystem is flagged rather than silently missed."
+}

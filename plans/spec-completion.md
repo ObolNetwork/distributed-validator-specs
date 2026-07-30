@@ -302,9 +302,34 @@ Also fixed in this pass:
 2. **Consumer suites**: Go test package in charon + Rust test crate in pluto
    loading vectors from a pinned spec release. Catches charon regressions
    against its own documented protocol, not just pluto divergence.
-3. **Spec-conformance CI here**: checkout charon@pinned + pluto@pinned, run
-   both vector suites; scheduled weekly run against charon@main as the
-   staleness alarm.
+3. **Spec-conformance CI here** — split, because the two halves have different
+   blockers:
+   - [x] **Staleness alarm (DONE, 2026-07-30).** `charon_anchor.json` holds the
+     pinned commit and the watched/ignored path sets in machine-readable form;
+     `scripts/check_charon_drift.py` lists charon commits between the anchor and
+     `main` that touch spec surface, exiting non-zero when any do;
+     `.github/workflows/charon-staleness.yml` runs it weekly (Mondays 07:00 UTC)
+     plus on demand. Not run on pull requests: charon drifting is not a reason to
+     block an unrelated PR.
+
+     Paths are watched **broadly** — whole directories, minus only the components
+     listed under "Explicitly out of scope" below — so a charon subsystem nobody
+     has considered gets reported rather than silently missed. Dependency bumps
+     fall outside the watched roots and never fire. Test-only commits are
+     reported but sorted last, since charon's tests are where the accept/reject
+     tables this spec mirrors live, but they rarely move the wire.
+
+     Verified by replay, not by assertion: run against the previous anchor
+     `2eb6798e` it reproduces the Phase 1.1 findings exactly — the same three
+     substantive commits ranked first, `adddef75` demoted to test-only,
+     `7c0354f1` excluded as deadliner, and the three dependency bumps not matched
+     at all. `tests/test_charon_anchor.py` pins the path-matching behaviour and
+     fails if `charon_anchor.json` and the README anchor disagree, which would
+     otherwise leave the check measuring drift from the wrong commit and still
+     passing. The check is deliberately outside `tox`, since it needs the network.
+   - [ ] **Vector conformance against pinned checkouts**: checkout charon@pinned +
+     pluto@pinned and run both vector suites. Blocked on item 2 — there are no
+     consumer suites to run yet.
 4. **Wire-level harness**: extend pluto's mixed docker-compose/dkg-runner
    infra; spec Python as passive protocol oracle (decode captured protobuf,
    validate QBFT transcripts against `protocol.py`).
