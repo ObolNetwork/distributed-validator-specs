@@ -163,6 +163,10 @@ above.
 `tests/test_vectors.py` runs every suite against the spec, so a suite that
 drifts from the implementation fails the normal test run.
 
+[`consumers/`](../consumers/README.md) holds the same suites wired into a real
+implementation. That is where a vector stops being a document: charon runs all
+nine of them across 314 subtests.
+
 ## Units and precision
 
 `timer_deadlines.json` is expressed in integer nanoseconds, and those integers

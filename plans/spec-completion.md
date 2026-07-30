@@ -375,9 +375,47 @@ Also fixed in this pass:
    loading vectors from a pinned spec release. Catches charon regressions
    against its own documented protocol, not just pluto divergence.
 
-   No longer blocked: the release mechanism it pins against exists as of
-   2026-07-30 (see item 1), so a consumer can depend on `spec-v0.1.0` once that
-   tag is published. Both halves are cross-repository work, which is what remains.
+   - [x] **Charon (Go), written and verified 2026-07-30.** In `consumers/go/`,
+     laid out mirroring charon's tree so placing it is `rsync -a consumers/go/
+     ~/charon/`. All nine suites, **314 subtests**, run green against a charon
+     worktree at the anchor `6054bcb2`. Not a PR yet — this repo cannot merge into
+     charon, so `consumers/README.md` documents placement and the pinning rules.
+   - [ ] **Pluto (Rust)** — not started. Pluto's crate layout mirrors charon's
+     (`crates/{cluster,consensus,priority,parsigex,crypto,k1util,...}`), and it
+     already carries `crates/consensus/testdata/vectors/hashproto.json`, which
+     `qbft_hashing.json` is meant to replace.
+
+   Correction to the plan's wording: it cannot be "a Go test package". Almost
+   everything the vectors cover is unexported in charon — `hashProto`,
+   `verifyMsgLimits`, `verifyPeerShareIdx`, `calculateResult`, the round-timer
+   helpers, and the decided-resend limiter (a closure inside `Run`) — so an
+   external package physically cannot reach them. The suite is one importable
+   loader plus five in-package test files. `specvectors.CoveredSuites` records
+   which file runs which suite, and `TestEverySuiteIsCovered` fails when a release
+   ships a suite nothing runs; `tests/test_consumers.py` enforces the same
+   mapping from this side, since the Go code is not compiled here.
+
+   Found while writing it: **charon has two `hashProto` functions with different
+   `Any` semantics.** `core/priority` hashes the `Any` wrapper itself, type URL
+   included; `core/consensus/qbft` rejects an `Any` outright and its callers
+   unwrap first, so the hash covers the inner message. The `any_string` vectors
+   only round-trip through the priority one. The spec was right in both places —
+   `encode_any_string` documents the type URL being inside the priority hash, and
+   `hash_value` hashes the inner encoding for consensus — but the *contrast* was
+   documented nowhere, and an implementation with one Any-hashing convention
+   diverges on one side or the other.
+
+   Verified by mutating charon rather than by asserting: `maxDecidedResends`
+   16→15 fails `resend_cap_per_source`; the consensus wire limit 32→128 MiB fails
+   `one_byte_over_limit` and `p2p_default_read_limit`; making priority's
+   `hashProto` unwrap `Any` fails all four `any_string` cases.
+
+   One coverage gap the mutation testing exposed, deliberately left open: moving
+   priority's Any-hashing to the *call site* in `calculate.go` (unwrap there,
+   leave `hashProto` alone) is **not** caught. The scoring vectors look topics up
+   by name and no case pins the hash-derived *topic ordering*, so the convention
+   is pinned for the function but not for its use. Closing it needs a vector that
+   asserts topic order for two or more topics.
 3. **Spec-conformance CI here** — split, because the two halves have different
    blockers:
    - [x] **Staleness alarm (DONE, 2026-07-30).** `charon_anchor.json` holds the
@@ -426,8 +464,10 @@ Also fixed in this pass:
      loader and git plumbing both checks share, so they cannot disagree about
      which commit the anchor is.
    - [ ] **Vector conformance against pinned checkouts**: checkout charon@pinned +
-     pluto@pinned and run both vector suites. Blocked on item 2 — there are no
-     consumer suites to run yet.
+     pluto@pinned and run both vector suites. The charon half is now runnable —
+     `consumers/go/` exists and passes — but running it from CI here means
+     checking out charon, vendoring the artifact and invoking `go test`, which
+     needs a Go toolchain in this repo's CI. Still blocked on item 2 for pluto.
 4. **Wire-level harness**: extend pluto's mixed docker-compose/dkg-runner
    infra; spec Python as passive protocol oracle (decode captured protobuf,
    validate QBFT transcripts against `protocol.py`).

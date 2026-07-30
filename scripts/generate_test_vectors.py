@@ -216,6 +216,10 @@ def priority_scoring() -> Dict[str, Any]:
                     "slot": slot,
                     "min_required": MIN_REQUIRED,
                     "topic": TOPIC,
+                    # Every peer also proposes this topic with no priorities, and
+                    # it must appear in the result with an empty list. Named in
+                    # the input so a consumer does not have to read the prose.
+                    "ignored_topic": IGNORED_TOPIC,
                     "peers": [
                         {"peer_id": msg.peer_id, "priorities": PRIORITY_SETS[set_name]}
                         for msg, set_name in zip(msgs, sets, strict=True)
