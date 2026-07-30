@@ -8,14 +8,28 @@ based purely on message history and upon rules.
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from dv_spec.subspecs.consensus.cryptography import hash_value
 from dv_spec.subspecs.consensus.qbft.definition import Definition
-from dv_spec.subspecs.consensus.qbft.message import MsgType, QBFTConsensusMsg, QBFTMsg
+from dv_spec.subspecs.consensus.qbft.message import (
+    MsgType,
+    QBFTConsensusMsg,
+    QBFTMsg,
+    verify_msg_limits,
+)
 from dv_spec.subspecs.consensus.qbft.transport import Transport
 from dv_spec.subspecs.consensus.timer import RoundTimer, get_default_timer
 from dv_spec.types import Duty
+
+MAX_DECIDED_RESENDS = 16
+"""Maximum number of DECIDED rebroadcasts that post-decision ROUND-CHANGE
+messages from a single peer can trigger.
+
+A lagging peer re-sends ROUND-CHANGE with an increasing round on each timeout
+until it learns the decided value, so a handful of resends is ample for
+liveness, while the cap stops a malicious peer minting ever-higher rounds
+from extracting unlimited large rebroadcasts (amplification DoS)."""
 
 
 class UponRule(Enum):
@@ -53,8 +67,8 @@ class QBFTConsensus:
     peer: int
     """Index of this peer in the cluster."""
 
-    proposal_value: Any
-    """Proposal value for this node."""
+    proposal_value: bytes
+    """Proposal value for this node, as a deterministic protobuf encoding."""
 
     round: int = 1
     """Current round number."""
@@ -62,7 +76,7 @@ class QBFTConsensus:
     prepared_round: Optional[int] = None
     """Prepared round if any."""
 
-    prepared_value: Optional[Any] = None
+    prepared_value: Optional[bytes] = None
     """Prepared value if any."""
 
     prepared_value_hash: Optional[bytes] = None
@@ -79,6 +93,11 @@ class QBFTConsensus:
 
     dedup_rules: Dict[Tuple[UponRule, int], bool] = field(default_factory=dict)
     """Deduplication for rules triggered per round."""
+
+    decided_resends: Dict[int, Tuple[int, int]] = field(default_factory=dict)
+    """Tracks DECIDED rebroadcasts triggered by each peer's post-decision
+    ROUND-CHANGE messages: peer_idx -> (highest round a rebroadcast was
+    triggered for, total rebroadcasts triggered by the peer)."""
 
     round_start_time: float = field(default_factory=time.time)
     """Timestamp when the current round started."""
@@ -168,7 +187,6 @@ class QBFTConsensus:
             and msg.prepared_round == 0
             and msg.prepared_value_hash == b"\x00" * 32
         ):
-            return True
             return True
 
         pr = msg.prepared_round
@@ -410,9 +428,33 @@ class QBFTConsensus:
         self.round = r
         self.dedup_rules = {}
 
+    def _allow_decided_resend(self, peer_idx: int, msg_round: int) -> bool:
+        """Report whether a post-decision ROUND-CHANGE may trigger a DECIDED rebroadcast.
+
+        Records the rebroadcast when permitted. It permits at most one
+        rebroadcast per source per strictly-increasing round, capped at
+        MAX_DECIDED_RESENDS per source, so duplicate, replayed or maliciously
+        round-incremented messages can't repeatedly trigger a large rebroadcast
+        (amplification DoS), while a peer advancing to a genuinely new round
+        still gets served. Sources are authenticated by the transport, so the
+        tracked set stays naturally bounded by the cluster size.
+        """
+        highest_round, count = self.decided_resends.get(peer_idx, (0, 0))
+        if msg_round <= highest_round or count >= MAX_DECIDED_RESENDS:
+            return False
+
+        self.decided_resends[peer_idx] = (msg_round, count + 1)
+
+        return True
+
     def handle_message(self, consensus_msg: QBFTConsensusMsg) -> List[QBFTConsensusMsg]:
         """Handle an incoming QBFT consensus message using upon rules."""
         msg = consensus_msg.msg
+
+        # Bound justification/value counts before any per-element work.
+        # In Charon this (together with the MAX_CONSENSUS_MSG_SIZE read limit)
+        # is enforced at the transport layer before signature verification.
+        verify_msg_limits(consensus_msg, self.d.nodes)
 
         # Store value mappings in transport only
         if consensus_msg.values:
@@ -427,7 +469,15 @@ class QBFTConsensus:
             return []
 
         if len(self.q_commit) > 0:
-            if msg.peer_idx != self.peer and msg.type == MsgType.ROUND_CHANGE:
+            # Just send DECIDED if consensus already decided. The resend is
+            # rate-limited (see _allow_decided_resend) to bound amplification;
+            # note this runs before the is_justified check, so the
+            # ROUND-CHANGE need not even be justified.
+            if (
+                msg.peer_idx != self.peer
+                and msg.type == MsgType.ROUND_CHANGE
+                and self._allow_decided_resend(msg.peer_idx, msg.round)
+            ):
                 value_hash: Optional[bytes] = self.q_commit[0].value_hash
                 if value_hash is None:
                     return []

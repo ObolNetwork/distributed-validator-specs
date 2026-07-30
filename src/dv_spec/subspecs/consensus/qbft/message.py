@@ -6,7 +6,7 @@ for distributed validators.
 """
 
 from enum import IntEnum
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
@@ -21,6 +21,15 @@ class MsgType(IntEnum):
     COMMIT = 3
     ROUND_CHANGE = 4
     DECIDED = 5
+
+
+MAX_CONSENSUS_MSG_SIZE = 32 * 1024 * 1024  # 32 MB
+"""Maximum wire size of an incoming consensus message.
+
+Receivers MUST enforce this as a stream read limit before decoding, so a
+malicious peer cannot exhaust memory with an oversized message. The cap is
+well above the largest legitimate message (a DECIDED carrying a full quorum
+of COMMIT justifications plus a beacon block value)."""
 
 
 class QBFTMsg(BaseModel):
@@ -132,6 +141,41 @@ class QBFTConsensusMsg(BaseModel):
     justification: list[QBFTMsg] = Field(
         default_factory=list, description="Supporting messages proving validity of this message"
     )
-    values: list[Any] = Field(
-        default_factory=list, description="Actual consensus values referenced by value hashes"
+    values: list[bytes] = Field(
+        default_factory=list,
+        description=(
+            "Consensus values referenced by value hashes, as deterministic "
+            "protobuf encodings (Any-wrapped on the wire)"
+        ),
     )
+
+
+def verify_msg_limits(consensus_msg: QBFTConsensusMsg, nodes: int) -> None:
+    """Bound the justification and value counts of a consensus message.
+
+    Receivers MUST apply these limits before any expensive per-element work
+    (each justification requires a signature verification/recovery, each value
+    a decode + hash). Without them a single authenticated peer could pack one
+    large message with many sub-messages to exhaust CPU/memory on every peer
+    (amplification DoS).
+
+    Limits:
+    - A legitimate justification set contains at most a quorum of ROUND-CHANGE
+      plus a quorum of PREPARE messages, bounded above by ``2 * nodes``.
+    - Each message (the main message plus each justification) references at
+      most two values (value and prepared value), so values are bounded by
+      ``2 * (justifications + 1)``.
+
+    Raises:
+        ValueError: If the message exceeds either limit.
+    """
+    max_justifications = 2 * nodes
+    if len(consensus_msg.justification) > max_justifications:
+        raise ValueError(
+            f"too many justifications: {len(consensus_msg.justification)} "
+            f"(max {max_justifications})"
+        )
+
+    max_values = 2 * (len(consensus_msg.justification) + 1)
+    if len(consensus_msg.values) > max_values:
+        raise ValueError(f"too many values: {len(consensus_msg.values)} (max {max_values})")

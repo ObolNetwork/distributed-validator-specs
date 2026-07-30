@@ -11,6 +11,7 @@ from dv_spec.subspecs.consensus.timer import (
     TimerType,
     create_timer,
     get_default_timer,
+    get_duty_start_delay,
 )
 from dv_spec.types import Duty, DutyType
 
@@ -242,3 +243,91 @@ class TestTimerComparison:
 
         # DoubleEager should have longest timeout for high rounds
         assert del_timeout > inc_timeout > lin_timeout
+
+
+class TestDutyStartDelay:
+    """Test duty start delay calculation."""
+
+    def test_attester_delay(self) -> None:
+        """Test attestations start one third into the slot."""
+        assert get_duty_start_delay(DutyType.ATTESTER, 12.0) == 4.0
+
+    def test_aggregator_delay(self) -> None:
+        """Test aggregations start two thirds into the slot."""
+        assert get_duty_start_delay(DutyType.AGGREGATOR, 12.0) == 8.0
+
+    def test_sync_contribution_delay(self) -> None:
+        """Test sync contributions start two thirds into the slot."""
+        assert get_duty_start_delay(DutyType.SYNC_CONTRIBUTION, 12.0) == 8.0
+
+    def test_other_duties_no_delay(self) -> None:
+        """Test other duties start at the slot boundary."""
+        assert get_duty_start_delay(DutyType.PROPOSER, 12.0) == 0.0
+        assert get_duty_start_delay(DutyType.RANDAO, 12.0) == 0.0
+
+
+class TestDeterministicDoubleEagerLinearRoundTimer:
+    """Test genesis-derived deterministic deadlines of the double eager timer."""
+
+    GENESIS = 1000.0
+    SLOT_DURATION = 12.0
+
+    def _make_timer(self, duty: Duty, now: float) -> DoubleEagerLinearRoundTimer:
+        """Create a deterministic timer with an injected clock."""
+        timer = DoubleEagerLinearRoundTimer(duty, self.GENESIS, self.SLOT_DURATION)
+        timer._current_time_func = lambda: now
+        return timer
+
+    def test_first_deadline_from_slot_start(self) -> None:
+        """Test the first deadline derives from genesis, slot and duty delay."""
+        # Attester at slot 100: duty start = 1000 + 100*12 + 12/3 = 2204.
+        duty = Duty(slot=100, type=DutyType.ATTESTER)
+        timer = self._make_timer(duty, now=2204.0)
+
+        # Round 1 deadline = 2204 + 1 = 2205, so 1s remains from t=2204.
+        assert timer.calculate_timeout(1) == 1.0
+        assert timer.first_deadlines[1] == 2205.0
+
+    def test_deadlines_align_across_nodes(self) -> None:
+        """Test nodes starting at different times compute the same deadline."""
+        duty = Duty(slot=100, type=DutyType.AGGREGATOR)
+        early_node = self._make_timer(duty, now=2208.0)
+        late_node = self._make_timer(duty, now=2208.5)
+
+        early_node.calculate_timeout(1)
+        late_node.calculate_timeout(1)
+
+        # Duty start = 1000 + 1200 + 8 = 2208; both deadlines are 2209.
+        assert early_node.first_deadlines[1] == late_node.first_deadlines[1] == 2209.0
+
+    def test_late_node_gets_shorter_timeout(self) -> None:
+        """Test a node starting late gets only the remaining time."""
+        duty = Duty(slot=100, type=DutyType.PROPOSER)
+        # Duty start = 1000 + 1200 + 0 = 2200; round 2 deadline = 2202.
+        timer = self._make_timer(duty, now=2201.5)
+        assert timer.calculate_timeout(2) == 0.5
+
+    def test_expired_deadline_gives_non_positive_timeout(self) -> None:
+        """Test an already-passed deterministic deadline times out immediately."""
+        duty = Duty(slot=100, type=DutyType.ATTESTER)
+        # Round 1 deadline = 2205, node starts at 2206.
+        timer = self._make_timer(duty, now=2206.0)
+        assert timer.calculate_timeout(1) == -1.0
+
+    def test_double_extends_from_first_deadline(self) -> None:
+        """Test repeated access extends the deterministic first deadline."""
+        duty = Duty(slot=100, type=DutyType.ATTESTER)
+        timer = self._make_timer(duty, now=2204.0)
+
+        timer.calculate_timeout(1)  # First deadline: 2205.
+        # Second access: deadline 2205 + 1 = 2206, so 2s remain from t=2204.
+        assert timer.calculate_timeout(1) == 2.0
+
+    def test_wall_clock_fallback_without_genesis(self) -> None:
+        """Test the timer falls back to the local clock without chain timing."""
+        duty = Duty(slot=100, type=DutyType.ATTESTER)
+        timer = DoubleEagerLinearRoundTimer(duty)
+        timer._current_time_func = lambda: 5000.0
+
+        assert timer.calculate_timeout(3) == 3.0
+        assert timer.first_deadlines[3] == 5003.0

@@ -59,8 +59,32 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Specs:
-      - Pedersen DKG: specs/pedersen-dkg.md
+  - Cluster:
+      - Cluster Files: dv-spec/cluster-files.md
+  - Key Generation:
+      - FROST DKG: dv-spec/dkg-frost.md
+      - Pedersen DKG: dv-spec/dkg-pedersen.md
+      - Cluster Edit Protocols: dv-spec/dkg-cluster-edits.md
+      - DKG Sync: dv-spec/dkg-sync.md
+      - Reliable Broadcast: dv-spec/reliable-broadcast.md
+  - Wire Format:
+      - Encoding and Hashing: dv-spec/hashing.md
+  - Duty Workflow:
+      - Duty Scheduling: dv-spec/duty-scheduling.md
+      - ValidatorAPI: dv-spec/validatorapi.md
+      - Consensus (QBFT): dv-spec/consensus.md
+      - Partial Signature Exchange: dv-spec/parsigex.md
+      - Signature Aggregation: dv-spec/sigagg.md
+      - Beacon Broadcast: dv-spec/broadcast.md
+  - Cluster Coordination:
+      - Priority: dv-spec/priority.md
+      - InfoSync: dv-spec/infosync.md
+      - Peer Info: dv-spec/peerinfo.md
+  - Client:
+      - Chain: client/chain.md
+      - Containers: client/containers.md
+      - Networking: client/networking.md
+      - Validator: client/validator.md
 
 extra:
   social:

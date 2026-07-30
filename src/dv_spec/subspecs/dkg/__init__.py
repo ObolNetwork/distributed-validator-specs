@@ -1,9 +1,42 @@
 """DKG subspecifications.
 
-Currently includes the Pedersen DKG interoperability types.
+Covers both DKG algorithms — FROST (the default) and Pedersen (opt-in) — the
+node signature exchange that concludes every ceremony, and the output artifact
+they share.
 """
 
-from .message import (
+from .frost import (
+    BROADCAST_TARGET_ID,
+    FROST_PROTOCOL_PREFIX,
+    POINT_LENGTH,
+    ROUND1_CAST_MSG_ID,
+    ROUND1_P2P_PROTOCOL_ID,
+    ROUND2_CAST_MSG_ID,
+    SCALAR_LENGTH,
+    FrostMsgKey,
+    FrostRound1Cast,
+    FrostRound1Casts,
+    FrostRound1P2P,
+    FrostRound1ShamirShare,
+    FrostRound2Cast,
+    FrostRound2Casts,
+    assemble_validator_shares,
+    frost_dkg_context,
+    round1_complete,
+    round2_complete,
+    verify_round1_casts,
+    verify_round1_p2p,
+    verify_round2_casts,
+)
+from .node_sigs import (
+    NODE_SIG_MSG_ID,
+    NONE_DATA,
+    SIGNATURE_LENGTH,
+    MsgNodeSig,
+    collect_node_sigs,
+    verify_node_sig_msg,
+)
+from .pedersen import (
     PEDERSEN_DKG_PROTOCOL_ID,
     NodePubKeyMessage,
     NodePubKeyShares,
@@ -13,14 +46,50 @@ from .message import (
     PedersenJustificationBundle,
     PedersenResponse,
     PedersenResponseBundle,
-    PublicShares,
     ValidatorPubKeyShareMessage,
-    ValidatorShare,
     generate_nonce_from_node_pubkeys,
 )
+from .protocols import (
+    EDIT_PROTOCOL_STEP_COUNT,
+    LOCK_DEFINITION_FIELDS_RESET,
+    EditProtocol,
+    EditProtocolStep,
+    add_operators_participants,
+    ceremony_share_index,
+    edit_protocol_steps,
+    new_lock_share_index,
+    recommended_threshold,
+    remove_operators_participants,
+    replace_operator_participants,
+    reshare_participants,
+    resolve_new_threshold,
+)
+from .share import PublicShares, ValidatorShare
 
 __all__ = [
+    "BROADCAST_TARGET_ID",
+    "EDIT_PROTOCOL_STEP_COUNT",
+    "FROST_PROTOCOL_PREFIX",
+    "LOCK_DEFINITION_FIELDS_RESET",
+    "NODE_SIG_MSG_ID",
+    "NONE_DATA",
     "PEDERSEN_DKG_PROTOCOL_ID",
+    "POINT_LENGTH",
+    "ROUND1_CAST_MSG_ID",
+    "ROUND1_P2P_PROTOCOL_ID",
+    "ROUND2_CAST_MSG_ID",
+    "SCALAR_LENGTH",
+    "SIGNATURE_LENGTH",
+    "FrostMsgKey",
+    "FrostRound1Cast",
+    "FrostRound1Casts",
+    "FrostRound1P2P",
+    "FrostRound1ShamirShare",
+    "EditProtocol",
+    "EditProtocolStep",
+    "FrostRound2Cast",
+    "FrostRound2Casts",
+    "MsgNodeSig",
     "NodePubKeyMessage",
     "NodePubKeyShares",
     "PedersenDeal",
@@ -32,5 +101,23 @@ __all__ = [
     "PublicShares",
     "ValidatorPubKeyShareMessage",
     "ValidatorShare",
+    "add_operators_participants",
+    "assemble_validator_shares",
+    "ceremony_share_index",
+    "collect_node_sigs",
+    "edit_protocol_steps",
+    "frost_dkg_context",
     "generate_nonce_from_node_pubkeys",
+    "new_lock_share_index",
+    "recommended_threshold",
+    "remove_operators_participants",
+    "replace_operator_participants",
+    "reshare_participants",
+    "resolve_new_threshold",
+    "round1_complete",
+    "round2_complete",
+    "verify_node_sig_msg",
+    "verify_round1_casts",
+    "verify_round1_p2p",
+    "verify_round2_casts",
 ]

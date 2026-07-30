@@ -9,7 +9,7 @@ and triggering a round change.
 import time
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict
+from typing import Dict, Optional
 
 from dv_spec.types import Duty
 from dv_spec.types.duty import DutyType
@@ -21,6 +21,117 @@ class TimerType(Enum):
     INCREASING = "inc"
     EAGER_DOUBLE_LINEAR = "eager_dlinear"
     LINEAR = "linear"
+
+
+PROPOSAL_ROUND_TIMEOUT = 1.5
+"""Round 1 timeout for proposer duties, in seconds.
+
+Block proposals need longer than other duties in the first round because the
+leader must fetch a block from the beacon node before it can propose.
+"""
+
+
+NANOSECONDS_PER_SECOND = 1_000_000_000
+"""Nanoseconds in a second, the resolution these delays are computed at."""
+
+
+def get_duty_start_delay_nanos(duty_type: DutyType, slot_duration_nanos: int) -> int:
+    """
+    Return the delay from slot start to when a duty is scheduled to begin.
+
+    This matches the duty scheduler's slot offsets so that consensus round
+    deadlines align with when consensus actually starts for the duty:
+
+    - Attestations start one third into the slot.
+    - Aggregations and sync contributions start two thirds into the slot.
+    - All other duties start at the slot boundary.
+
+    The division is integer division at nanosecond resolution, because Charon
+    computes it on a `time.Duration`. It matters whenever the slot duration is
+    not divisible by three: a five second slot (Gnosis Chain) gives an attester
+    delay of 1666666666ns, not 1⅔ seconds. Computing the thirds in floating
+    point instead would put every round deadline a fraction of a nanosecond
+    late.
+    """
+    if duty_type == DutyType.ATTESTER:
+        return slot_duration_nanos // 3
+    if duty_type in (DutyType.AGGREGATOR, DutyType.SYNC_CONTRIBUTION):
+        return (2 * slot_duration_nanos) // 3
+    return 0
+
+
+def get_duty_start_delay(duty_type: DutyType, slot_duration: float) -> float:
+    """Return `get_duty_start_delay_nanos` in seconds.
+
+    Note that seconds are held as a float, which cannot represent a nanosecond
+    offset from a unix timestamp exactly. Implementations comparing deadlines at
+    nanosecond resolution should work in integer nanoseconds.
+    """
+    nanos = get_duty_start_delay_nanos(duty_type, int(slot_duration * NANOSECONDS_PER_SECOND))
+
+    return nanos / NANOSECONDS_PER_SECOND
+
+
+def eager_double_linear_timeout(duty_type: DutyType, round_num: int) -> float:
+    """Return the base timeout of a round for the eager double linear timer.
+
+    Rounds grow linearly: 1s, 2s, 3s and so on. Round 1 of a proposer duty is
+    the exception, see `PROPOSAL_ROUND_TIMEOUT`.
+    """
+    if duty_type == DutyType.PROPOSER and round_num == 1:
+        return PROPOSAL_ROUND_TIMEOUT
+
+    return max(1.0, float(round_num))
+
+
+def eager_double_linear_deadline_nanos(
+    duty: Duty,
+    round_num: int,
+    genesis_time_nanos: int,
+    slot_duration_nanos: int,
+) -> int:
+    """Return `eager_double_linear_deadline` in integer nanoseconds.
+
+    This is the exact form. A unix timestamp with nanosecond resolution needs
+    more significant digits than a float can hold, so implementations that
+    compare deadlines exactly MUST work in integers.
+    """
+    slot_start = genesis_time_nanos + slot_duration_nanos * duty.slot
+    duty_start = slot_start + get_duty_start_delay_nanos(duty.type, slot_duration_nanos)
+    timeout = round(eager_double_linear_timeout(duty.type, round_num) * NANOSECONDS_PER_SECOND)
+
+    return duty_start + timeout
+
+
+def eager_double_linear_deadline(
+    duty: Duty,
+    round_num: int,
+    genesis_time: float,
+    slot_duration: float,
+) -> float:
+    """Return the absolute time at which a round first expires.
+
+    Derived from chain timing rather than from when a node locally started the
+    instance, so every correct node computes the same value and round
+    transitions — and therefore leader election — stay aligned across the
+    cluster. A node that starts late gets a deadline in the past and times out
+    immediately, which is the intended behaviour: it catches up by changing
+    round rather than by running out of step with its peers.
+
+    Args:
+        duty: The duty being agreed on; its slot fixes the base time and its
+            type fixes the start delay.
+        round_num: The consensus round, starting at 1.
+        genesis_time: Chain genesis, in unix seconds.
+        slot_duration: Slot duration, in seconds.
+
+    Returns:
+        The deadline in unix seconds.
+    """
+    slot_start = genesis_time + slot_duration * duty.slot
+    duty_start = slot_start + get_duty_start_delay(duty.type, slot_duration)
+
+    return duty_start + eager_double_linear_timeout(duty.type, round_num)
 
 
 class RoundTimer(ABC):
@@ -130,6 +241,13 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
 
     3. **Linear**: Round duration increases linearly with the round number: 1s, 2s, 3s, etc.
 
+    4. **Deterministic**: When constructed with ``genesis_time`` and ``slot_duration``,
+       the first deadline of each round is derived from the duty's slot start time
+       (plus the duty start delay, see ``get_duty_start_delay``) rather than the local
+       wall clock. All correct nodes therefore compute identical round deadlines,
+       keeping round transitions (and hence leader election) aligned across the
+       cluster regardless of when each node locally started the consensus instance.
+
     The original solution is to reset the round timer on justified pre-prepare, but this causes
     the leader to reset at the start of the round (no effect), while others reset when they
     receive the justified pre-prepare (large effect). Leaders tend to get out of sync.
@@ -138,10 +256,23 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
     duty: Duty
     """Duty associated with this timer, used for optimizations."""
 
-    def __init__(self, duty: Duty):
-        """Initialize the timer with optional duty information."""
+    genesis_time: Optional[float]
+    """Chain genesis time (unix seconds), used for deterministic deadlines."""
+
+    slot_duration: Optional[float]
+    """Slot duration in seconds, used for deterministic deadlines."""
+
+    def __init__(
+        self,
+        duty: Duty,
+        genesis_time: Optional[float] = None,
+        slot_duration: Optional[float] = None,
+    ):
+        """Initialize the timer with duty and optional chain timing information."""
         self.duty = duty
-        self.first_deadlines: Dict[int, float] = {}  # Track first timeout for each round
+        self.genesis_time = genesis_time
+        self.slot_duration = slot_duration
+        self.first_deadlines: Dict[int, float] = {}  # Track first deadline for each round
         self._current_time_func = time.time  # Allow injection for testing
 
     def calculate_timeout(self, round_num: int) -> float:
@@ -149,43 +280,43 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
         Calculate timeout duration, with doubling logic for active rounds.
 
         The timeout logic works as follows:
-        1. First call for a round: returns linear timeout (round * 1s)
-        2. Subsequent calls: returns double the first timeout
+        1. First call for a round: the deadline is the duty's deterministic start
+           time (slot start + duty start delay, when genesis_time/slot_duration are
+           set) plus the linear timeout (round * 1s). Without chain timing info it
+           falls back to the local wall clock (now + timeout).
+        2. Subsequent calls: the deadline extends by the base timeout from the
+           first deadline ("double when leader is active" behavior).
 
-        This implements the "double when leader is active" behavior.
+        Returns the remaining duration until the deadline. May be zero or negative
+        when the deterministic deadline has already passed (the round times out
+        immediately), e.g. on a node that started late.
         """
-        # Handle proposal timeout optimization
-        if self._proposal_timeout_optimization(round_num):
-            timeout = 1.5  # 1500ms
-        else:
-            timeout = self._linear_round_timeout(round_num)
-
+        timeout = eager_double_linear_timeout(self.duty.type, round_num)
         current_time = self._current_time_func()
 
         if round_num in self.first_deadlines:
-            # This round has been accessed before - use double timeout
-            first_deadline = self.first_deadlines[round_num]
-            # Calculate remaining time from first deadline, then double it
-            remaining_from_first = max(0, first_deadline - current_time)
-            return remaining_from_first + timeout  # Effectively doubling
+            # This round has been accessed before - deadline is the first
+            # deadline extended by the base timeout (effectively doubling).
+            deadline = self.first_deadlines[round_num] + timeout
         else:
-            # First time accessing this round - store the deadline and return base timeout
-            self.first_deadlines[round_num] = current_time + timeout
-            return timeout
+            # First time accessing this round - calculate the first deadline.
+            if self.genesis_time is not None and self.slot_duration is not None:
+                # Deterministic: derive the deadline from the duty's slot start
+                # time so all nodes agree on round boundaries.
+                deadline = eager_double_linear_deadline(
+                    self.duty, round_num, self.genesis_time, self.slot_duration
+                )
+            else:
+                # Fallback: local wall clock.
+                deadline = current_time + timeout
+
+            self.first_deadlines[round_num] = deadline
+
+        return deadline - current_time
 
     def get_type(self) -> TimerType:
         """Return the timer type identifier."""
         return TimerType.EAGER_DOUBLE_LINEAR
-
-    def _linear_round_timeout(self, round_num: int) -> float:
-        """Calculate linear timeout: round * 1 second."""
-        return max(1.0, round_num * 1.0)
-
-    def _proposal_timeout_optimization(self, round_num: int) -> bool:
-        """Check if proposal timeout optimization applies."""
-        return (
-            self.duty is not None and self.duty.type == DutyType.PROPOSER and round_num == 1
-        )  # Protocol starts at round 1
 
     def reset_round(self, round_num: int) -> None:
         """Reset the timeout tracking for a specific round."""
@@ -197,19 +328,32 @@ class DoubleEagerLinearRoundTimer(RoundTimer):
         self.first_deadlines.clear()
 
 
-def create_timer(timer_type: TimerType, duty: Duty) -> RoundTimer:
-    """Factory function to create timer instances."""
+def create_timer(
+    timer_type: TimerType,
+    duty: Duty,
+    genesis_time: Optional[float] = None,
+    slot_duration: Optional[float] = None,
+) -> RoundTimer:
+    """Factory function to create timer instances.
+
+    ``genesis_time`` and ``slot_duration`` are only used by the eager double
+    linear timer to compute deterministic, cluster-aligned round deadlines.
+    """
     if timer_type == TimerType.INCREASING:
         return IncreasingRoundTimer(duty)
     elif timer_type == TimerType.LINEAR:
         return LinearRoundTimer(duty)
     elif timer_type == TimerType.EAGER_DOUBLE_LINEAR:
-        return DoubleEagerLinearRoundTimer(duty)
+        return DoubleEagerLinearRoundTimer(duty, genesis_time, slot_duration)
     else:
         raise ValueError(f"Unknown timer type: {timer_type}")
 
 
-def get_default_timer(duty: Duty) -> RoundTimer:
+def get_default_timer(
+    duty: Duty,
+    genesis_time: Optional[float] = None,
+    slot_duration: Optional[float] = None,
+) -> RoundTimer:
     """
     Get the default timer type for distributed consensus.
 
@@ -219,5 +363,7 @@ def get_default_timer(duty: Duty) -> RoundTimer:
     - Otherwise use IncreasingRoundTimer
 
     For this implementation, we default to DoubleEagerLinearRoundTimer.
+    Implementations should provide ``genesis_time`` and ``slot_duration`` so
+    that round deadlines are deterministic and aligned across the cluster.
     """
-    return DoubleEagerLinearRoundTimer(duty)
+    return DoubleEagerLinearRoundTimer(duty, genesis_time, slot_duration)

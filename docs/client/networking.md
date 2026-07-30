@@ -26,7 +26,7 @@
 
 ## Node identification
 
-Nodes are defined as a list of their ENRs in a yaml file at [`src/dv_spec/client/nodes.yaml`](../../src/dv_spec/client/nodes.yaml).
+Nodes are defined as a list of their ENRs in a yaml file at [`src/dv_spec/client/nodes.yaml`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/client/nodes.yaml).
 For example:
 
 ```yaml
@@ -94,7 +94,7 @@ data being sent on the topic and how the data field of the message is encoded.
 
 - `Name` - see table below
 - `Encoding` - the encoding strategy describes a specific representation of
-  bytes that will be transmitted over the wire. See the [Encodings](#Encodings)
+  bytes that will be transmitted over the wire. See the [Encodings](#encodings)
   section for further details.
 
 The optional `from` (1), `seqno` (3), `signature` (5) and `key` (6) protobuf
@@ -149,11 +149,11 @@ The token of the negotiated protocol ID specifies the type of encoding to be
 used for the req/resp interaction. Only one value is possible at this time:
 
 - `ssz_snappy`: The contents are first
-  [SSZ-encoded](../../ssz/simple-serialize.md) and then compressed with
-  [Snappy](https://github.com/google/snappy) frames compression. For objects
-  containing a single field, only the field is SSZ-encoded not a container with
-  a single field. For example, the `BlocksByRoot` request is an SSZ-encoded
-  list of `Root`'s.
+  [SSZ-encoded](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)
+  and then compressed with [Snappy](https://github.com/google/snappy) frames
+  compression. For objects containing a single field, only the field is
+  SSZ-encoded not a container with a single field. For example, the
+  `BlocksByRoot` request is an SSZ-encoded list of `Root`'s.
 
 #### Messages
 

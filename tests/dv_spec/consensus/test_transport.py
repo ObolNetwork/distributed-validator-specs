@@ -32,7 +32,7 @@ class TestTransport:
         peers = [
             PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(4)
         ]
-        transport = Transport(private_key=b"key" * 8, peers=peers)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
 
         # Test initial empty state
         assert transport.values == {}
@@ -56,17 +56,17 @@ class TestTransport:
         peers = [
             PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(4)
         ]
-        transport = Transport(private_key=b"key" * 8, peers=peers)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
 
         # Test getting non-existent value
         assert transport.get_value(b"nonexistent") is None
 
         # Test setting and getting values
-        test_values = {b"hash1": b"value1", b"hash2": {"data": "complex"}}
+        test_values = {b"hash1": b"value1", b"hash2": b"value2"}
         transport.set_values(test_values)
 
         assert transport.get_value(b"hash1") == b"value1"
-        assert transport.get_value(b"hash2") == {"data": "complex"}
+        assert transport.get_value(b"hash2") == b"value2"
         assert transport.get_value(b"hash3") is None
 
     def test_sign_message_basic(self) -> None:
@@ -75,7 +75,7 @@ class TestTransport:
         peers = [
             PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(4)
         ]
-        transport = Transport(private_key=b"key" * 8, peers=peers)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
 
         # Create a message without signature
         duty = Duty(slot=100, type=1)
@@ -99,7 +99,7 @@ class TestTransport:
         peers = [
             PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(4)
         ]
-        transport = Transport(private_key=b"key" * 8, peers=peers)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
 
         # Create message with existing signature
         duty = Duty(slot=100, type=1)
@@ -126,7 +126,7 @@ class TestTransport:
         peers = [
             PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(4)
         ]
-        transport = Transport(private_key=b"key" * 8, peers=peers)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
 
         # Set up test value
         value_hash = b"test_value_hash" + b"\x00" * 17  # 32 bytes total
@@ -167,7 +167,7 @@ class TestTransport:
         peers = [
             PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(4)
         ]
-        transport = Transport(private_key=b"key" * 8, peers=peers)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
 
         duty = Duty(slot=100, type=1)
         value_hash = b"proposal_hash" + b"\x00" * 19  # 32 bytes total
@@ -207,7 +207,7 @@ class TestTransport:
     def test_empty_peers_list(self) -> None:
         """Test transport with empty peers list."""
 
-        transport = Transport(private_key=b"key" * 8, peers=[])
+        transport = Transport(private_key=b"test_key" * 4, peers=[])
 
         assert transport.num_peers == 0
 
@@ -254,7 +254,7 @@ class TestTransport:
         peers = [
             PeerInfo(peer_idx=i, public_key=b"test_key", peer_id=f"peer_{i}") for i in range(5)
         ]
-        transport = Transport(private_key=b"key" * 8, peers=peers)
+        transport = Transport(private_key=b"test_key" * 4, peers=peers)
 
         assert transport.peers == peers
         assert len(transport.peers) == 5

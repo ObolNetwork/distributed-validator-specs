@@ -119,9 +119,13 @@ The sync protocol uses the following protocol ID for stream multiplexing:
 
 The following protobuf definitions are used over the wire:
 
-- [dkg_sync.proto](../../proto/dkg_sync.proto) - DKG sync message definitions
+- [dkg_sync.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/dkg_sync.proto) - DKG sync message definitions
 
-See the Python reference implementation: [`MsgSync`](../../src/dv_spec/subspecs/dkg_sync/message.py#L36-L76) and [`MsgSyncResponse`](../../src/dv_spec/subspecs/dkg_sync/message.py#L79-L97)
+See the Python reference implementation: [`MsgSync` and `MsgSyncResponse`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg_sync/message.py)
+
+`MsgSync` also carries an optional `nickname` field (max 32 characters): a
+human-friendly peer name displayed to other operators during the ceremony.
+It is purely informational and MUST NOT affect protocol behavior.
 
 ## Ceremony Sequencing
 
@@ -213,6 +217,7 @@ Clients maintain a local step counter and send periodic `MsgSync` updates (~1 se
 - Current step number
 - Shutdown flag (false during ceremony)
 - Version string
+- Nickname (optional, max 32 characters; informational only)
 
 After completing each ceremony phase, the client increments its step counter and waits for the barrier to lift before proceeding. The server response timestamp allows RTT measurement for network monitoring.
 
@@ -243,6 +248,38 @@ Servers enforce the following rules:
 2. **Monotonicity**: Steps must not decrease (step_new ≥ step_old)
 3. **Maximum Jump**: Steps should not skip more than 2
 4. **All Peers Progress**: Server only unblocks barrier when all N-1 clients report step N or N+1
+
+### Step Numbering per Ceremony
+
+All peers start at step 0, and the first barrier advance to step 1 happens as soon as every peer is connected — before any ceremony work. Each work phase then runs *at* a step and advances on completion, and the shutdown sequence advances once more to a "shutdown ready" step before any peer starts tearing down.
+
+The number of steps is therefore fixed per ceremony type, and it is part of the handshake: a node that runs a different number of phases stalls its peers at a barrier.
+
+**Key generation** — a fresh DKG, or [appending validators](dkg-cluster-edits.md#appending-validators) to an existing cluster:
+
+| Step | Work at this step                                              |
+| ---- | -------------------------------------------------------------- |
+| 1    | Run the DKG ([FROST](dkg-frost.md) or [Pedersen](dkg-pedersen.md)) |
+| 2    | Sign, exchange and aggregate deposit data                      |
+| 3    | Sign, exchange and aggregate validator registrations           |
+| 4    | Sign, exchange and aggregate the cluster lock hash             |
+| 5    | Exchange node signatures over the lock hash                    |
+| 6    | Verify lock signatures; write keystores, lock and deposit files |
+| 7    | (reached on completion)                                        |
+| 8    | Shutdown ready                                                 |
+
+**Cluster edits** — reshare, add, remove or replace operators (see [Cluster Edit Protocols](dkg-cluster-edits.md)):
+
+| Step | Work at this step                                     |
+| ---- | ----------------------------------------------------- |
+| 1    | Pedersen reshare                                      |
+| 2    | Update the lock and aggregate its hash signature      |
+| 3    | Exchange node signatures over the new lock hash       |
+| 4    | Write artifacts                                       |
+| 5    | (reached on completion)                               |
+| 6    | Shutdown ready                                        |
+
+A departing operator runs no-ops for the steps it has no work for, rather than skipping them.
 
 ## Graceful Shutdown
 

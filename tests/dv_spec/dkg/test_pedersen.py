@@ -1,6 +1,6 @@
 from hashlib import sha256
 
-from dv_spec.subspecs.dkg.message import (
+from dv_spec.subspecs.dkg.pedersen import (
     NodePubKeyMessage,
     NodePubKeyShares,
     PedersenDeal,

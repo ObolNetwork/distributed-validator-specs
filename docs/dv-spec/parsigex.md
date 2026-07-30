@@ -8,7 +8,7 @@ Scope:
 - Protocol identifiers and exchange patterns
 - Verification and validation flows
 
-Out of scope: cryptographic signature routines, threshold aggregation logic, transport reliability;
+Out of scope: cryptographic signature routines, transport reliability, and threshold aggregation — see [Signature Aggregation](sigagg.md) for the threshold trigger and aggregate construction.
 
 ## Terms and notation
 
@@ -38,7 +38,7 @@ All messages are sent under protocol ID:
 
 3. **Reception and verification**: Each peer receives the broadcast, verifies the partial signature(s), and stores them in its own `ParSigDB`.
 
-4. **Threshold detection**: Once `ParSigDB` accumulates `t` valid partial signatures for a duty, it triggers the signature aggregation component.
+4. **Threshold detection**: Once `ParSigDB` accumulates exactly `t` valid partial signatures over matching data for a duty, it triggers the signature aggregation component. See [Signature Aggregation](sigagg.md#threshold-trigger) for the precise condition.
 
 The exchange ensures that all nodes eventually have access to all partial signatures, enabling any node to aggregate signatures when the threshold is reached.
 
@@ -46,10 +46,10 @@ The exchange ensures that all nodes eventually have access to all partial signat
 
 The following protobuf definitions are used over the wire:
 
-- [parsigex.proto](../../proto/parsigex.proto) - ParSigEx message definitions
-- [core.proto](../../proto/core.proto) - Common core type definitions (Duty, ParSignedData, ParSignedDataSet)
+- [parsigex.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/parsigex.proto) - ParSigEx message definitions
+- [core.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/core.proto) - Common core type definitions (Duty, ParSignedData, ParSignedDataSet)
 
-See the Python reference implementation: [`ParSigExMsg`](../../src/dv_spec/subspecs/parsigex/message.py#L46-L56), [`ParSignedData`](../../src/dv_spec/subspecs/parsigex/message.py#L19-L31), [`ParSignedDataSet`](../../src/dv_spec/subspecs/parsigex/message.py#L33-L43), and [`Duty`](../../src/dv_spec/types/duty.py#L27-L40).
+See the Python reference implementation: [`ParSigExMsg`, `ParSignedData` and `ParSignedDataSet`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/parsigex/message.py), and [`Duty`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/types/duty.py).
 
 ## Protocol flow
 

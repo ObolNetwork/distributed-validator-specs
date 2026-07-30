@@ -6,6 +6,8 @@ This document describes the Priority protocol used for achieving cluster-wide co
 
 The Priority protocol enables distributed validator nodes to reach cluster-wide consensus on ordered preference lists. This is essential for coordinating behavior across independent nodes that may have different capabilities, versions, or configurations.
 
+This document specifies the generic mechanism. Its one production use is [InfoSync](infosync.md), which defines the concrete topics, the trigger cadence, and how the agreed result selects the cluster's consensus protocol.
+
 ### Use Cases
 
 Distributed validators are composed of multiple independent nodes that need to coordinate on shared preferences. For example:
@@ -41,8 +43,16 @@ Out of scope: cryptographic signature routines, consensus algorithm implementati
 All messages are sent under protocol ID:
 
 ```text
-/charon/priority/2.0.0
+charon/priority/2.0.0
 ```
+
+> **Warning**: Unlike every other protocol in this specification, this
+> protocol ID has **no leading `/`**. This is a historical accident in
+> Charon's implementation (`core/priority/prioritiser.go`) that is now
+> normative: the string above is exactly what appears on the wire, and
+> alternative implementations (e.g. Pluto) must reproduce it verbatim to
+> interoperate. If Charon ever versions this protocol, the leading slash
+> should be restored at that point.
 
 ## Exchange Pattern
 
@@ -79,10 +89,10 @@ Priority implements a two-phase request-response pattern:
 
 The following protobuf definitions are used over the wire:
 
-- [priority.proto](../../proto/priority.proto) - Priority protocol message definitions
-- [core.proto](../../proto/core.proto) - Common core type definitions (Duty)
+- [priority.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/priority.proto) - Priority protocol message definitions
+- [core.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/core.proto) - Common core type definitions (Duty)
 
-See the Python reference implementation: [`PriorityMsg`](../../src/dv_spec/subspecs/priority/message.py#L35-L48), [`PriorityTopicProposal`](../../src/dv_spec/subspecs/priority/message.py#L20-L32), [`PriorityResult`](../../src/dv_spec/subspecs/priority/message.py#L86-L96), [`PriorityTopicResult`](../../src/dv_spec/subspecs/priority/message.py#L72-L83), [`PriorityScoredResult`](../../src/dv_spec/subspecs/priority/message.py#L51-L60), and [`Duty`](../../src/dv_spec/types/duty.py#L27-L40).
+See the Python reference implementation: [`PriorityMsg`, `PriorityTopicProposal`, `PriorityResult`, `PriorityTopicResult` and `PriorityScoredResult`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/priority/message.py), and [`Duty`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/types/duty.py).
 
 ## Protocol Flow
 
@@ -263,7 +273,7 @@ The scoring algorithm ensures deterministic, fair prioritization:
 
 ## Interop Notes
 
-- **Protocol versioning**: The protocol ID `/charon/priority/2.0.0` identifies the version; future versions may use different IDs
+- **Protocol versioning**: The protocol ID `charon/priority/2.0.0` (note: no leading `/`, see warning above) identifies the version; future versions may use different IDs
 - **Signature algorithm**: Uses secp256k1 ECDSA signatures with recovery; public keys derived from libp2p peer IDs
 - **Hash function**: Uses SSZ (Simple Serialize) hashing over deterministic protobuf marshalling for message signing and priority deduplication
 - **Protobuf Any encoding**: Topics and priorities are encoded as protobuf `Any` types for flexibility; current implementation uses `structpb.StringValue` for both

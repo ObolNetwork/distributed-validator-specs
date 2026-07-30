@@ -1,17 +1,16 @@
-# Lean Ethereum Python Specifications
+# Distributed Validator Specifications
 
-This project provides reference implementations of the Lean Ethereum protocol and its
-cryptographic subspecifications.
+This project provides reference specifications of the Obol Distributed Validator
+protocol, as implemented by [Charon](https://github.com/ObolNetwork/charon) (Go)
+and [Pluto](https://github.com/NethermindEth/pluto) (Rust).
 
 ## Specifications Overview
 
-### Lean Ethereum Specifications
+### Protocol Subspecifications
 
-The core protocol specifications are located in `src/dv_spec/`.
-
-### Cryptographic Subspecifications
-
-Supporting cryptographic primitives are located in `src/dv_spec/subspecs/`.
+Executable protocol specifications (QBFT consensus, partial signature
+exchange, DKG, peer info, priority, reliable broadcast) are located in
+`src/dv_spec/subspecs/`, with accompanying documents in `docs/dv-spec/`.
 
 ### Client Subspecifications
 
@@ -23,6 +22,8 @@ format for the time being and are subject to change.
 1. **Clarity over Performance**: Readable reference implementations
 2. **Strong Typing**: Pydantic models with full validation
 3. **Test Coverage**: Extensive tests for all modules
+4. **Interoperability**: Precise enough for independent implementations
+   (Charon, Pluto) to join the same cluster
 
 ## Development
 

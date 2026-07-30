@@ -61,9 +61,9 @@ Relay nodes use one-off `DoOnce` requests to gather peer information on-demand:
 
 The following protobuf definitions are used over the wire:
 
-- [peerinfo.proto](../../proto/peerinfo.proto) - PeerInfo message definitions
+- [peerinfo.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/peerinfo.proto) - PeerInfo message definitions
 
-See the Python reference implementation: [`PeerInfo`](../../src/dv_spec/subspecs/peerinfo/message.py#L9-L48).
+See the Python reference implementation: [`PeerInfo`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/peerinfo/message.py).
 
 ## Protocol Flow
 

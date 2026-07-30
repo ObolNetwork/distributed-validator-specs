@@ -21,7 +21,9 @@ from dv_spec.subspecs.priority.helpers import extract_priority_values
 
 def test_protocol_id() -> None:
     """Test protocol ID constant."""
-    assert PROTOCOL_ID == "/charon/priority/2.0.0"
+    # Deliberately missing the leading "/" — matches Charon's wire behavior
+    # (core/priority/prioritiser.go). See docs/dv-spec/priority.md.
+    assert PROTOCOL_ID == "charon/priority/2.0.0"
 
 
 def test_max_priorities() -> None:

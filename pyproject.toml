@@ -27,7 +27,12 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.9.2,<3", "typing-extensions>=4.4"]
+dependencies = [
+    "eth-keys>=0.6.0,<1",
+    "py-ecc>=7.0.1,<8",
+    "pydantic>=2.9.2,<3",
+    "typing-extensions>=4.4",
+]
 
 [project.license]
 file = "LICENSE"
@@ -89,6 +94,12 @@ warn_unused_configs = true
 no_implicit_reexport = true
 namespace_packages = false
 explicit_package_bases = false
+
+# py_ecc and eth_keys expose their public API through plain imports rather than
+# __all__, so strict mode's implicit-reexport ban does not apply to them.
+[[tool.mypy.overrides]]
+module = ["py_ecc.*", "eth_keys.*"]
+implicit_reexport = true
 
 [tool.pytest.ini_options]
 minversion = "8.3.3"

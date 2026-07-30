@@ -37,9 +37,15 @@ The following message topics are appended to the prefix when routing on libp2p:
 
 The following protobuf definitions are used over the wire:
 
-- [bcast.proto](../../proto/bcast.proto) - Reliable broadcast message definitions
+- [bcast.proto](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/bcast.proto) - Reliable broadcast message definitions
 
-See the Python reference implementation: [`AnyMessage`](../../src/dv_spec/subspecs/bcast/reliable_broadcast.py#L26-L35), [`BCastSigRequest`](../../src/dv_spec/subspecs/bcast/reliable_broadcast.py#L45-L50), [`BCastSigResponse`](../../src/dv_spec/subspecs/bcast/reliable_broadcast.py#L52-L58), and [`BCastMessage`](../../src/dv_spec/subspecs/bcast/reliable_broadcast.py#L60-L69).
+See the Python reference implementation: [`AnyMessage`, `BCastSigRequest`, `BCastSigResponse`, and `BCastMessage`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/reliable_bcast/reliable_broadcast.py).
+
+> **Naming note**: This component lives in Charon at `dkg/bcast` and its
+> protocol ID is `/charon/dkg/bcast/1.0.0`. It is **not** the same component
+> as Charon's `core/bcast`, which broadcasts fully-signed duties to the beacon
+> node — see [Beacon Broadcast](broadcast.md). This spec uses the module name
+> `reliable_bcast` to avoid that collision.
 
 ## Protocol Flow
 

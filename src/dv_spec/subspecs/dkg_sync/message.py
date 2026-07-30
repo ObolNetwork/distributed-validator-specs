@@ -91,6 +91,17 @@ class MsgSync(StrictBaseModel):
         ),
     )
 
+    nickname: str = Field(
+        default="",
+        max_length=32,
+        description=(
+            "Optional human-friendly peer nickname, displayed to other operators "
+            "during the ceremony (e.g., in server logs). Maximum 32 characters "
+            "(enforced by senders). Empty string when no nickname is configured. "
+            "Purely informational; MUST NOT affect protocol behavior."
+        ),
+    )
+
 
 class MsgSyncResponse(StrictBaseModel):
     """Response message sent by servers back to clients.
