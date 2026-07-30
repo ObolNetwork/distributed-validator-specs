@@ -107,19 +107,20 @@ def test_released_behaviours_carry_a_comparable_version(manifest: Dict[str, Any]
         assert behaviour["first_charon_release"] == "v{}.{}.{}".format(*triple)
 
 
-def test_release_ordering_is_not_lexical(anchor: Anchor) -> None:
+def test_release_ordering_is_not_lexical() -> None:
     # The reason the triple is shipped at all: a consumer comparing tag strings
-    # concludes v1.11.0 behaviour is present on a v1.9.0 Charon.
-    releases: Dict[str, tuple[int, int, int]] = {}
-    for behaviour in anchor.behaviours:
-        triple = behaviour.semver
-        if triple is not None and behaviour.first_charon_release is not None:
-            releases[behaviour.first_charon_release] = triple
+    # concludes v1.11.0 behaviour is present on a v1.9.0 Charon. Synthetic
+    # behaviours, because which releases the real table names changes over time.
+    from charon_repo import Behaviour
 
-    assert {"v1.9.0", "v1.11.0"} <= set(releases), "expected both releases in the table"
+    def semver_of(release: str) -> tuple[int, int, int]:
+        behaviour = Behaviour(name="x", first_charon_release=release, spec="README.md", note="")
+        triple = behaviour.semver
+        assert triple is not None
+        return triple
 
     assert "v1.11.0" < "v1.9.0"  # the trap
-    assert releases["v1.11.0"] > releases["v1.9.0"]  # the fix
+    assert semver_of("v1.11.0") > semver_of("v1.9.0")  # the fix
 
 
 @pytest.mark.parametrize("bad", ["1.9.0", "v1.9", "v1.9.0-rc1", "main", "latest"])
@@ -155,14 +156,43 @@ def test_readme_compatibility_table_matches_the_anchor(anchor: Anchor) -> None:
 # --- the build refuses to mislead -------------------------------------------
 
 
-def test_build_writes_a_complete_artifact() -> None:
-    destination = build(spec_version(), archive=False)
+def test_build_writes_a_complete_artifact(tmp_path: Path) -> None:
+    destination = build(spec_version(), archive=False, dist_root=tmp_path)
 
     assert (destination / "manifest.json").exists()
     assert (destination / "test_vectors" / "qbft_hashing.json").exists()
     assert (destination / "proto" / "priority.proto").exists()
     # The prose spec is deliberately not shipped; see docs/versioning.md.
     assert not (destination / "docs").exists()
+
+
+def test_archive_layout_is_what_consumers_untar(tmp_path: Path) -> None:
+    # The tarball is the artifact release.yml attaches, and consumers extract it
+    # expecting `spec-v<version>/manifest.json` at the root. A broken arcname
+    # breaks every pin without failing any build.
+    import tarfile
+
+    version = spec_version()
+    build(version, archive=True, dist_root=tmp_path)
+
+    tarball = tmp_path / f"{tag_for(version)}.tar.gz"
+    assert tarball.exists()
+
+    with tarfile.open(tarball) as handle:
+        names = set(handle.getnames())
+
+    assert f"{tag_for(version)}/manifest.json" in names
+    assert f"{tag_for(version)}/test_vectors/qbft_hashing.json" in names
+    assert f"{tag_for(version)}/proto/priority.proto" in names
+
+
+def test_build_actually_runs_verify(tmp_path: Path) -> None:
+    # Deleting the verify() call would leave every verify test green while the
+    # build shipped unverified artifacts; the wiring needs its own pin.
+    with pytest.raises(CharonRepoError, match="MAJOR.MINOR.PATCH"):
+        build("not-a-version", archive=False, dist_root=tmp_path)
+
+    assert not any(tmp_path.iterdir()), "a refused build must write nothing"
 
 
 @pytest.mark.parametrize("version", ["0.1", "v0.1.0", "0.1.0-rc1", "", "1.0.0.0"])
@@ -200,4 +230,39 @@ def test_verify_rejects_a_missing_proto(manifest: Dict[str, Any]) -> None:
     broken["proto"][0]["file"] = "proto/does-not-exist.proto"
 
     with pytest.raises(CharonRepoError, match="missing proto"):
+        verify(broken, "0.1.0")
+
+
+@pytest.mark.parametrize(
+    ("key", "empty", "match"),
+    [
+        ("proto", [], "no protos listed"),
+        ("compatibility", {"behaviours": []}, "no behaviours listed"),
+    ],
+)
+def test_verify_rejects_empty_sections(
+    manifest: Dict[str, Any], key: str, empty: Any, match: str
+) -> None:
+    # An empty list iterates zero times, so without these checks the per-entry
+    # loops below them pass vacuously on a gutted anchor.
+    broken = copy.deepcopy(manifest)
+    broken[key] = empty
+
+    with pytest.raises(CharonRepoError, match=match):
+        verify(broken, "0.1.0")
+
+
+def test_verify_rejects_payload_the_manifest_does_not_list(manifest: Dict[str, Any]) -> None:
+    # The payload directories are copied wholesale; a file the manifest omits
+    # still ships, undescribed by the one document consumers trust.
+    broken = copy.deepcopy(manifest)
+    dropped = broken["proto"].pop()
+
+    with pytest.raises(CharonRepoError, match=f"not in the manifest.*{dropped['file']}"):
+        verify(broken, "0.1.0")
+
+    broken = copy.deepcopy(manifest)
+    dropped = broken["test_vectors"].pop()
+
+    with pytest.raises(CharonRepoError, match="not in the manifest"):
         verify(broken, "0.1.0")

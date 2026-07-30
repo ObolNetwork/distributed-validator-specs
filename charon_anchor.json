@@ -85,13 +85,15 @@
     },
     {
       "name": "Linear round timer subsequent-round timeout fix",
-      "first_charon_release": "v1.11.0",
-      "spec": "docs/dv-spec/consensus.md"
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/consensus.md",
+      "note": "No final Charon release carries this; it shipped in the v1.11.0 release candidates (first in v1.11.0-rc1). Timing-only, no wire change: against an older peer, its rounds 2+ simply time out on the uncorrected schedule."
     },
     {
       "name": "QBFT DECIDED-resend rate limit and message size/count limits",
-      "first_charon_release": "v1.11.0",
-      "spec": "docs/dv-spec/consensus.md"
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/consensus.md",
+      "note": "No final Charon release carries this; it shipped in the v1.11.0 release candidates (first in v1.11.0-rc1). The limits only reject messages no honest peer sends, so enforcing them interoperates with every release."
     },
     {
       "name": "Preferred priority protocol ID /charon/priority/2.0.0",
@@ -112,5 +114,5 @@
       "note": "Unreleased on Charon main. Rejects only partial signatures no honest peer sends."
     }
   ],
-  "behaviours_note": "Specified behaviours that postdate Charon v1.7.1, the release Pluto pins. first_charon_release is null for behaviour that exists only on Charon main. This is the machine-readable form of the compatibility table in README.md, and it is what release manifests carry so a consumer pinning a spec release can tell which parts apply to the Charon it runs against."
+  "behaviours_note": "Specified behaviours that postdate Charon v1.7.1, the release Pluto pins. first_charon_release names the first final Charon release; it is null for behaviour no final release carries, whether it exists only on main or in release candidates — the entry's note says which. This is the machine-readable form of the compatibility table in README.md, and it is what release manifests carry so a consumer pinning a spec release can tell which parts apply to the Charon it runs against."
 }

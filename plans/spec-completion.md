@@ -21,7 +21,7 @@ Context anchors:
 - [x] Deterministic genesis/slot-derived deadlines + duty start delay in
       `DoubleEagerLinearRoundTimer` (charon #4243, in v1.9.0 — commit
       `31ff2996` is an ancestor of the v1.9.0 tag)
-- [x] QBFT hardening (charon #4557, in v1.11.0): DECIDED-resend rate limit
+- [x] QBFT hardening (charon #4557, in the v1.11.0 RCs): DECIDED-resend rate limit
       (16/source, strictly-increasing round), `MAX_CONSENSUS_MSG_SIZE` (32 MiB),
       `verify_msg_limits` (justifications ≤ 2n, values ≤ 2(j+1))
 - [x] Rename `subspecs/bcast` → `subspecs/reliable_bcast` (disambiguate from
@@ -369,7 +369,9 @@ Also fixed in this pass:
    `first_charon_release_semver` as a `[major, minor, patch]` triple alongside the
    tag, and the policy page says to compare with it. Verified by walking the ladder
    against the extracted tarball: 7 behaviours absent on v1.7.1 (pluto's pin), 5 on
-   v1.9.0, 3 on v1.11.0.
+   v1.9.0. (The branch review then caught that `v1.11.0` names no existing release —
+   only `v1.11.0-rc1` exists — so the timer fix and QBFT limits were moved to
+   `first_charon_release: null` with notes naming the RC.)
 
 2. **Consumer suites**: Go test package in charon + Rust test crate in pluto
    loading vectors from a pinned spec release. Catches charon regressions

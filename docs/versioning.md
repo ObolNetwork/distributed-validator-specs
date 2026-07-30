@@ -7,11 +7,12 @@ release carries a manifest saying which Charon it was validated against.
 
 The obvious scheme — `spec-v1.11` describes Charon `v1.11.x` — asserts something
 this spec cannot honour. The spec tracks Charon `main`, so at any moment it may
-specify behaviour that no tagged Charon release carries. At the `6054bcb2` anchor,
-three such behaviours exist: the slash-prefixed priority protocol ID, the stable
-sort of scored priorities, and sender-bound share indices in the DKG lock-hash
-exchange. A release named after a Charon version would claim to describe a Charon
-that behaves differently.
+specify behaviour that no final Charon release carries. At the `6054bcb2` anchor,
+five such behaviours exist: the slash-prefixed priority protocol ID, the stable
+sort of scored priorities, sender-bound share indices in the DKG lock-hash
+exchange, and — released so far only in `v1.11.0` release candidates — the linear
+round timer fix and the QBFT resend/size limits. A release named after a Charon
+version would claim to describe a Charon that behaves differently.
 
 The spec is also not a one-to-one restatement of a Charon release. It is a
 description of the protocol plus a record of when each behaviour appeared, which
@@ -72,7 +73,8 @@ Charon release that carried it:
       {
         "name": "Stable sort of scored priorities",
         "first_charon_release": null,
-        "first_charon_release_semver": null
+        "first_charon_release_semver": null,
+        "note": "Unreleased on Charon main. Only changes results for a tie among thirteen or more priorities in a topic, which no released Charon produces."
       }
     ]
   }
@@ -85,11 +87,13 @@ third character. A consumer asking "does the Charon I run have this?" with a
 string comparison silently concludes that `v1.11.0` behaviour is present on
 `v1.9.0`. The triple is shipped so nobody has to rediscover that.
 
-A `first_charon_release` of `null` means the behaviour exists only on Charon
-`main`. An implementation interoperating with a released Charon must expect that
-behaviour to be **absent** on the other side — which is why every such entry
-carries a note on what to do instead. The priority protocol ID is the sharp case:
-the preferred spelling is unreleased, so the legacy one must still be served.
+A `first_charon_release` of `null` means no **final** Charon release carries the
+behaviour — it may exist only on Charon `main`, or in release candidates; the
+entry's note says which. An implementation interoperating with a released Charon
+must expect that behaviour to be **absent** on the other side — which is why
+every such entry carries a note on what to do instead. The priority protocol ID
+is the sharp case: the preferred spelling is unreleased, so the legacy one must
+still be served.
 
 Conversely, a behaviour whose `first_charon_release` is newer than the Charon a
 peer runs is not a conformance failure of that peer.

@@ -45,6 +45,14 @@ jobs:
             exit 1
           fi
 
+      # The build itself only verifies the artifact's structure. Running the
+      # test suite here keeps a release from shipping vectors the spec itself
+      # no longer reproduces — nothing else gates publication on CI.
+      - name: Run the test suite
+        run: |
+          uv sync --all-extras
+          uv run pytest -q -p no:cacheprovider
+
       - name: Build the artifact
         run: uv run python scripts/build_release.py --archive
 

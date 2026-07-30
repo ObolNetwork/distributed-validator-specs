@@ -43,8 +43,8 @@ targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
 | ------------------------------------------------------------------ | -------------------- |
 | `MsgSync.nickname` field (DKG sync)                                 | `v1.9.0`             |
 | Deterministic (genesis-derived) eager double linear round deadlines | `v1.9.0`             |
-| Linear round timer subsequent-round timeout fix                     | `v1.11.0`            |
-| QBFT DECIDED-resend rate limit and message size/count limits        | `v1.11.0`            |
+| Linear round timer subsequent-round timeout fix                     | unreleased (`v1.11.0` RCs) |
+| QBFT DECIDED-resend rate limit and message size/count limits        | unreleased (`v1.11.0` RCs) |
 | Preferred priority protocol ID `/charon/priority/2.0.0`             | unreleased (`main`)  |
 | Stable sort of scored priorities                                    | unreleased (`main`)  |
 | Sender-bound share indices in the DKG lock-hash exchange            | unreleased (`main`)  |
@@ -59,13 +59,16 @@ This table is also machine-readable, under `behaviours` in
 pinned. See [Versioning and releases](docs/versioning.md) for how spec versions
 relate to Charon's — they deliberately do not match.
 
-The three unreleased entries need care in both directions. The legacy priority
+The unreleased entries need care in both directions. The legacy priority
 protocol ID `charon/priority/2.0.0` is the **only** one every released Charon
 speaks, so it must still be served alongside the preferred spelling; Charon's own
 code targets `v1.12` for the preferred ID and `v1.14` for dropping the alias. The
 stable sort only changes results for a tie among thirteen or more priorities in a
 topic, which no released Charon produces. The sender binding rejects only
-partial signatures no honest peer sends.
+partial signatures no honest peer sends. The timer fix and the QBFT limits
+shipped in the `v1.11.0` release candidates but, as of this anchor, no final
+release — they are listed as unreleased until one exists, because "first Charon
+release" must name a release a consumer can actually run.
 
 ## What's Included
 

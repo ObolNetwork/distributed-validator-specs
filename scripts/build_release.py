@@ -6,8 +6,8 @@ machine-consumable contracts and nothing else — the prose specification is
 published as a website, and a Go or Rust test cannot load Markdown.
 
 The version is the spec's own, not Charon's. The spec tracks Charon `main`, so at
-any time it may specify behaviour that no tagged Charon release has: as of the
-`6054bcb2` anchor, three such behaviours exist. A tag named after a Charon
+any time it may specify behaviour that no final Charon release has: as of the
+`6054bcb2` anchor, five such behaviours exist. A tag named after a Charon
 release would therefore assert something false. Instead the manifest names the
 Charon anchor commit and lists, per behaviour, the first Charon release that
 carried it — so a consumer running a released Charon can tell which parts of the
@@ -33,9 +33,8 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
-from charon_repo import EXIT_ERROR, EXIT_OK, Anchor, CharonRepoError
+from charon_repo import EXIT_ERROR, EXIT_OK, REPO_ROOT, Anchor, CharonRepoError
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 DIST_ROOT = REPO_ROOT / "dist"
 
@@ -103,10 +102,11 @@ def build_manifest(version: str, anchor: Anchor) -> Dict[str, Any]:
         },
         "compatibility": {
             "note": (
-                "The spec tracks Charon main, so it can specify behaviour no tagged "
+                "The spec tracks Charon main, so it can specify behaviour no final "
                 "Charon release carries. A behaviour with a null first_charon_release "
-                "interoperates only with Charon main. Compare against your Charon "
-                "using first_charon_release_semver, the [major, minor, patch] triple: "
+                "is in no final release — only on main or in release candidates; its "
+                "note says which. Compare against your Charon using "
+                "first_charon_release_semver, the [major, minor, patch] triple: "
                 'Charon\'s tags are not ordered by string comparison, so "v1.11.0" '
                 'sorts below "v1.9.0".'
             ),
@@ -140,6 +140,12 @@ def verify(manifest: Dict[str, Any], version: str) -> None:
     if not manifest["test_vectors"]:
         raise CharonRepoError("no vector suites found; the artifact would be empty")
 
+    if not manifest["proto"]:
+        raise CharonRepoError("no protos listed; the artifact would carry no wire schema")
+
+    if not manifest["compatibility"]["behaviours"]:
+        raise CharonRepoError("no behaviours listed; the compatibility table would be empty")
+
     for suite in manifest["test_vectors"]:
         if not suite["cases"]:
             raise CharonRepoError(f"{suite['file']} has no cases")
@@ -155,14 +161,27 @@ def verify(manifest: Dict[str, Any], version: str) -> None:
         if not (REPO_ROOT / entry["file"]).exists():
             raise CharonRepoError(f"manifest lists missing proto {entry['file']}")
 
+    # The payload directories are copied wholesale, so a file the manifest does
+    # not list would still ship — undescribed by the one document consumers trust
+    # to be self-describing.
+    listed = {entry["file"] for entry in manifest["proto"]}
+    present = {str(path.relative_to(REPO_ROOT)) for path in (REPO_ROOT / "proto").rglob("*.proto")}
+    if present - listed:
+        raise CharonRepoError(f"protos shipped but not in the manifest: {sorted(present - listed)}")
 
-def build(version: str, archive: bool) -> Path:
+    listed = {suite["file"] for suite in manifest["test_vectors"]}
+    present = {f"test_vectors/{path.name}" for path in (REPO_ROOT / "test_vectors").glob("*.json")}
+    if present - listed:
+        raise CharonRepoError(f"suites shipped but not in the manifest: {sorted(present - listed)}")
+
+
+def build(version: str, archive: bool, dist_root: Path = DIST_ROOT) -> Path:
     """Write the release directory, and optionally a tarball beside it."""
     anchor = Anchor.load()
     manifest = build_manifest(version, anchor)
     verify(manifest, version)
 
-    destination = DIST_ROOT / tag_for(version)
+    destination = dist_root / tag_for(version)
     if destination.exists():
         shutil.rmtree(destination)
     destination.mkdir(parents=True)
@@ -172,10 +191,11 @@ def build(version: str, archive: bool) -> Path:
         shutil.copytree(REPO_ROOT / name, destination / name)
 
     if archive:
-        tarball = DIST_ROOT / f"{tag_for(version)}.tar.gz"
+        tarball = dist_root / f"{tag_for(version)}.tar.gz"
         with tarfile.open(tarball, "w:gz") as handle:
             handle.add(destination, arcname=tag_for(version))
-        print(f"wrote {tarball.relative_to(REPO_ROOT)}")
+        shown = tarball.relative_to(REPO_ROOT) if tarball.is_relative_to(REPO_ROOT) else tarball
+        print(f"wrote {shown}")
 
     return destination
 
