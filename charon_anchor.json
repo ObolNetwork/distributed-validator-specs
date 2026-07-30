@@ -22,5 +22,54 @@
     "core/tracker/",
     "core/tracking.go"
   ],
-  "ignore_note": "Internal, non-wire-visible components the spec deliberately does not cover: dutydb, aggsigdb, the deadliner, the tracker (observability) and retry/tracing plumbing. See 'Explicitly out of scope for the spec' in plans/spec-completion.md. Everything else under watch_paths is reported, so a new subsystem is flagged rather than silently missed."
+  "ignore_note": "Internal, non-wire-visible components the spec deliberately does not cover: dutydb, aggsigdb, the deadliner, the tracker (observability) and retry/tracing plumbing. See 'Explicitly out of scope for the spec' in plans/spec-completion.md. Everything else under watch_paths is reported, so a new subsystem is flagged rather than silently missed.",
+  "protos": [
+    {
+      "spec": "proto/bcast.proto",
+      "charon": "dkg/dkgpb/v1/bcast.proto"
+    },
+    {
+      "spec": "proto/consensus.proto",
+      "charon": "core/corepb/v1/consensus.proto",
+      "not_mirrored": [
+        "SniffedConsensusInstance",
+        "SniffedConsensusInstances",
+        "SniffedConsensusMsg"
+      ],
+      "why_not_mirrored": "The consensus sniffer's on-disk debug format. Charon writes these to a file for offline analysis; they are never sent between peers, so they are not interop surface."
+    },
+    {
+      "spec": "proto/core.proto",
+      "charon": "core/corepb/v1/core.proto"
+    },
+    {
+      "spec": "proto/dkg_sync.proto",
+      "charon": "dkg/dkgpb/v1/sync.proto"
+    },
+    {
+      "spec": "proto/frost.proto",
+      "charon": "dkg/dkgpb/v1/frost.proto"
+    },
+    {
+      "spec": "proto/nodesigs.proto",
+      "charon": "dkg/dkgpb/v1/nodesigs.proto"
+    },
+    {
+      "spec": "proto/parsigex.proto",
+      "charon": "core/corepb/v1/parsigex.proto"
+    },
+    {
+      "spec": "proto/pedersen.proto",
+      "charon": "dkg/dkgpb/v1/pedersen.proto"
+    },
+    {
+      "spec": "proto/peerinfo.proto",
+      "charon": "app/peerinfo/peerinfopb/v1/peerinfo.proto"
+    },
+    {
+      "spec": "proto/priority.proto",
+      "charon": "core/corepb/v1/priority.proto"
+    }
+  ],
+  "protos_note": "Each spec proto and the Charon file it mirrors, compared field by field at the anchor commit by scripts/check_proto_parity.py. Messages Charon defines that the spec deliberately omits must be listed under not_mirrored with a reason; anything undeclared is a finding."
 }

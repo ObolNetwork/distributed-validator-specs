@@ -21,62 +21,22 @@ the check itself could not run.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
-import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-ANCHOR_PATH = REPO_ROOT / "charon_anchor.json"
-
-EXIT_UP_TO_DATE = 0
-EXIT_DRIFTED = 1
-EXIT_ERROR = 2
-
-
-class DriftCheckError(RuntimeError):
-    """The check could not be completed, as distinct from finding drift."""
-
-
-@dataclass(frozen=True)
-class Anchor:
-    """The pinned Charon commit and the paths that matter to this spec."""
-
-    repo: str
-    branch: str
-    commit: str
-    date: str
-    watch_paths: tuple[str, ...]
-    ignore_paths: tuple[str, ...]
-
-    @classmethod
-    def load(cls, path: Path = ANCHOR_PATH) -> Anchor:
-        """Read the anchor from its JSON file."""
-        data = json.loads(path.read_text())
-        return cls(
-            repo=data["repo"],
-            branch=data["branch"],
-            commit=data["commit"],
-            date=data["date"],
-            watch_paths=tuple(data["watch_paths"]),
-            ignore_paths=tuple(data["ignore_paths"]),
-        )
-
-    def is_watched(self, path: str) -> bool:
-        """Whether a changed file is spec surface.
-
-        `ignore_paths` wins over `watch_paths`, which is how a single ignored file
-        inside a watched directory (`core/deadline.go`) is expressed.
-        """
-        if not any(path.startswith(prefix) for prefix in self.watch_paths):
-            return False
-
-        return not any(path == prefix or path.startswith(prefix) for prefix in self.ignore_paths)
+from charon_repo import (
+    EXIT_ERROR,
+    EXIT_FOUND,
+    EXIT_OK,
+    Anchor,
+    CharonRepoError,
+    resolve_repo,
+    run_git,
+)
 
 
 @dataclass(frozen=True)
@@ -99,64 +59,10 @@ class Commit:
         return all(path.endswith("_test.go") for path in self.watched_paths)
 
 
-def run_git(args: Sequence[str], cwd: Path | None = None) -> str:
-    """Run a git command and return its stdout, raising on a non-zero exit."""
-    result = subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise DriftCheckError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
-
-    return result.stdout
-
-
-def clone_charon(anchor: Anchor, destination: Path) -> Path:
-    """Clone Charon without blob content.
-
-    `--filter=blob:none` keeps the full commit and tree history, which is what
-    `git log --name-only` needs, while skipping file contents this check never
-    reads. A shallow clone would not work: the anchor can be arbitrarily far back.
-    """
-    run_git(
-        [
-            "clone",
-            "--filter=blob:none",
-            "--no-checkout",
-            "--quiet",
-            anchor.repo,
-            str(destination),
-        ]
-    )
-    return destination
-
-
-def resolve_repo(anchor: Anchor, repo_path: str | None, stack: List[Path]) -> Path:
-    """Return a Charon repository to inspect, cloning one if none was supplied.
-
-    Any directory created is appended to `stack` for the caller to clean up.
-    """
-    if repo_path:
-        path = Path(repo_path).expanduser().resolve()
-        if not (path / ".git").exists():
-            raise DriftCheckError(f"{path} is not a git repository")
-
-        # A local checkout can be on any branch and arbitrarily out of date.
-        run_git(["fetch", "--quiet", "origin", anchor.branch], cwd=path)
-        return path
-
-    temporary = Path(tempfile.mkdtemp(prefix="charon-drift-"))
-    stack.append(temporary)
-    return clone_charon(anchor, temporary / "charon")
-
-
 def find_drift(anchor: Anchor, repo: Path) -> List[Commit]:
     """List commits between the anchor and the tracked branch touching spec surface."""
     if not run_git(["cat-file", "-t", anchor.commit], cwd=repo).strip() == "commit":
-        raise DriftCheckError(f"anchor {anchor.commit} is not a commit in {anchor.repo}")
+        raise CharonRepoError(f"anchor {anchor.commit} is not a commit in {anchor.repo}")
 
     # \x1e (record separator) cannot appear in a subject line, unlike newlines,
     # which --name-only already uses to separate paths.
@@ -243,7 +149,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo = resolve_repo(anchor, args.repo_path, stack)
         head = run_git(["rev-parse", f"origin/{anchor.branch}"], cwd=repo).strip()
         commits = find_drift(anchor, repo)
-    except DriftCheckError as error:
+    except CharonRepoError as error:
         print(f"charon drift check could not run: {error}", file=sys.stderr)
         return EXIT_ERROR
     finally:
@@ -258,7 +164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         with open(summary, "a", encoding="utf-8") as handle:
             handle.write(report + "\n")
 
-    return EXIT_DRIFTED if commits else EXIT_UP_TO_DATE
+    return EXIT_FOUND if commits else EXIT_OK
 
 
 if __name__ == "__main__":

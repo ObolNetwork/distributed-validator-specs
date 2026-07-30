@@ -3,7 +3,8 @@
 `charon_anchor.json` is the machine-readable half of a fact that README.md also
 states in prose. If they disagree, the staleness check silently measures drift
 from the wrong commit — it would still pass, which is the failure mode worth a
-test. `scripts/check_charon_drift.py` consumes the same file.
+test. `scripts/check_charon_drift.py` and `scripts/check_proto_parity.py` both
+consume it through `scripts/charon_repo.py`.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ README_PATH = REPO_ROOT / "README.md"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from check_charon_drift import Anchor  # noqa: E402
+from charon_repo import Anchor  # noqa: E402
 
 
 @pytest.fixture(scope="module")

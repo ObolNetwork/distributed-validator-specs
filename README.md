@@ -25,10 +25,16 @@ candidates).
 
 The anchor is also recorded machine-readably in
 [`charon_anchor.json`](charon_anchor.json), alongside the Charon paths this spec
-covers. A weekly job runs
-[`scripts/check_charon_drift.py`](scripts/check_charon_drift.py) to report Charon
-commits past the anchor that touch those paths; run it yourself with
-`uv run python scripts/check_charon_drift.py`.
+covers and the Charon `.proto` file each file in [`proto/`](proto) mirrors. Two
+checks read it:
+
+| Check | Question | When it runs |
+| ------------------------------------------------------------------ | ---------------------------------------------- | ------------------- |
+| [`check_charon_drift.py`](scripts/check_charon_drift.py) | What moved in Charon *since* the anchor?       | Weekly, and on demand |
+| [`check_proto_parity.py`](scripts/check_proto_parity.py) | Does `proto/` still match Charon *at* the anchor? | On any change to `proto/` |
+
+Run either yourself with `uv run python scripts/<name>.py`, optionally against a
+local checkout: `--repo-path ~/charon`.
 
 Note for implementers pinned to older Charon versions (e.g. Pluto currently
 targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
@@ -244,6 +250,8 @@ uv run mkdocs build
 | Fix lint errors                        | `uv run ruff check --fix src tests scripts` |
 | Type check                             | `uv run mypy src tests scripts`     |
 | Regenerate test vectors                | `uv run python scripts/generate_test_vectors.py` |
+| Check for Charon drift past the anchor | `uv run python scripts/check_charon_drift.py` |
+| Check `proto/` parity at the anchor    | `uv run python scripts/check_proto_parity.py` |
 | Build docs                             | `uv run mkdocs build`               |
 | Serve docs                             | `uv run mkdocs serve`               |
 | Run all quality checks (no tests/docs) | `uv run tox -e all-checks`          |

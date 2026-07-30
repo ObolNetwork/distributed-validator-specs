@@ -327,6 +327,28 @@ Also fixed in this pass:
      fails if `charon_anchor.json` and the README anchor disagree, which would
      otherwise leave the check measuring drift from the wrong commit and still
      passing. The check is deliberately outside `tox`, since it needs the network.
+   - [x] **Proto parity (DONE, 2026-07-30).** Promoted out of Aspirations, because
+     `proto/` was the one part of the spec with no guardrail at all: nothing here
+     compiles or executes it (the encoders in `encoding/` carry their own explicit
+     field numbers), so a divergence was invisible to all 762 tests.
+     `scripts/check_proto_parity.py` compares each file in `proto/` against the
+     Charon file it mirrors — declared per file in `charon_anchor.json` — field by
+     field: numbers, names, types, `repeated`/`optional` labels, `reserved` sets
+     and the package. `.github/workflows/proto-parity.yml` runs it on any change
+     to `proto/`, the mapping or the script.
+
+     Not `buf breaking`, as originally sketched. `buf` diffs two revisions of one
+     schema, but `proto/` is deliberately a *subset* of Charon's with different
+     file paths and no `go_package`, so every legitimate omission would report as
+     a breaking change. Omissions are instead declared with a reason and checked
+     both ways: an undeclared one fails, and so does a declaration Charon has
+     outgrown.
+
+     Compares against the **anchor**, not `main`, so the result changes only when
+     this repo does — that is what makes it safe on a pull request, where the
+     staleness alarm would be noise. `scripts/charon_repo.py` now holds the anchor
+     loader and git plumbing both checks share, so they cannot disagree about
+     which commit the anchor is.
    - [ ] **Vector conformance against pinned checkouts**: checkout charon@pinned +
      pluto@pinned and run both vector suites. Blocked on item 2 — there are no
      consumer suites to run yet.
@@ -357,6 +379,28 @@ by reading it:
   (`time.Duration`), so a 5s slot (Gnosis Chain) gives an attester delay of
   1666666666ns. The spec's float helper was silently 0.33ns off; there is now an
   integer-nanosecond API and the vectors are normative in integers.
+
+From the proto parity pass (2026-07-30), all found by the new check on its first
+run against charon `6054bcb2`:
+
+- **`PriorityMsg` had `peer_id` and `topics` transposed** — the spec numbered them
+  2 and 3, charon numbers them 3 and 2. Interop-fatal, and silent: both types are
+  length-delimited, so a decoder does not error, it mis-parses. Worse, the message
+  is signed over its own encoding, so an implementation following `proto/` would
+  produce a signing root no peer can reproduce and *every* priority signature
+  would fail. Nothing else in the repo caught it because no Python code encodes
+  `PriorityMsg` — the field numbers only ever existed in the `.proto` file.
+- **Seven of ten spec protos declared no `package`.** Not cosmetic: the package is
+  part of the `Any` type URL, and priority and consensus both wrap payloads in
+  `Any`. It also meant `core.corepb.v1.Duty`, referenced by three files, resolved
+  to nothing.
+- `bcast.proto` used `google.protobuf.Any` without importing it, so `proto/` was
+  not compilable as it stood. The check now verifies imports and type resolution
+  on the spec side alone, which needs no charon and so runs in `pytest`.
+- `NodePubKeyMessage.shares` is `optional` in charon. For a message field that is
+  presence semantics the wire already has, so this one was harmless — recorded
+  because "harmless" was a conclusion the check forced someone to reach
+  deliberately rather than an assumption.
 
 From the cluster hashing pass:
 
@@ -423,9 +467,6 @@ against charon — 57 hand-built edge cases, 400 randomized definitions, three
 - **Versioning policy**: tagged spec releases (`spec-v1.7.1`, `spec-v1.8.x`)
   mapped to charon MAJOR.MINOR so pluto's version-forward path has an
   artifact trail.
-- **Proto parity CI**: buf breaking-change diff of `proto/` against charon's
-  `core/corepb`/`dkg/dkgpb` at the pinned commit (would have caught the
-  missing `nickname` field automatically).
 - Quirks registry doc: still deferred, and now thinner — the priority slash was
   fixed upstream (Phase 1.1), leaving the dkg-sync trailing slash and the
   priority legacy alias, which is scheduled for removal in charon `v1.14`.
