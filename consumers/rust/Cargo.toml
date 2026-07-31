@@ -13,6 +13,7 @@ hex = "0.4.3"
 pluto-k1util = { path = "../../../pluto/crates/k1util" }
 pluto-core = { path = "../../../pluto/crates/core" }
 pluto-consensus = { path = "../../../pluto/crates/consensus" }
+pluto-crypto = { path = "../../../pluto/crates/crypto" }
 k256 = { version = "0.13.4", features = ["ecdsa", "sha256"] }
 prost = "0.14"
 prost-types = "0.14"
