@@ -2,12 +2,29 @@ use pluto_cluster::definition::Definition;
 use pluto_cluster::lock::Lock;
 use spec_vectors_pluto::load_suite;
 
-/// `all_empty_lists` is a real charon divergence, not a test bug: charon's
-/// `Operators`/`ValidatorAddresses` fields lack `omitempty`
-/// (`cluster/definition.go`), so Go's `encoding/json` marshals a nil slice as
-/// `null`. Pluto's `DefinitionV1x10.operators`/`.validator_addresses`
-/// (`crates/cluster/src/definition.rs`) have no `#[serde(default)]` and reject
-/// `null` outright. See the cluster_hashing Results row / Findings entry.
+/// `all_empty_lists` is a real charon divergence, not a test bug — and it has
+/// **at least two independent parse blockers stacked**, so fixing only the
+/// first will not make this case pass:
+///
+/// 1. Charon's `Operators`/`ValidatorAddresses` fields lack `omitempty`
+///    (`cluster/definition.go`), so Go's `encoding/json` marshals a nil slice
+///    as `null`. Pluto's `DefinitionV1x10.operators`/`.validator_addresses`
+///    (`crates/cluster/src/definition.rs`) have no `#[serde(default)]` and
+///    reject `null` outright. This is the error this test currently observes.
+/// 2. Masked behind (1): charon's `Timestamp` field *does* carry `omitempty`
+///    (`definitionJSONv1x10to11`, `cluster/definition.go`), so an empty
+///    timestamp is legitimately absent from the JSON. Pluto's
+///    `DefinitionV1x10.timestamp` also has no `#[serde(default)]`. Confirmed
+///    by mutation: relaxing `operators`/`validators` from `null` to `[]` (as
+///    if (1) were fixed) still fails to parse, now on "missing field
+///    `timestamp`".
+///
+/// Whoever sees this test go red after a pluto change should expect to find
+/// the *next* blocker, not assume the case now passes end to end — only after
+/// (1) and (2) both resolve does `all_empty_lists` belong back in the strict
+/// `definition_hashes` loop. See the cluster_hashing Results row / Findings
+/// entry for the full field list (a lower bound, not a total — later fields
+/// are never reached while an earlier one blocks parsing).
 const DEFINITION_KNOWN_DIVERGENCE: &str = "all_empty_lists";
 
 /// `validator_without_deposit_data` is the lock-side counterpart: charon's
@@ -67,10 +84,13 @@ fn definition_hashes() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// Pins the `all_empty_lists` divergence: fails loudly (a regression to
-/// investigate, not a silent fix) the moment pluto's `Definition` parser
-/// starts accepting `operators: null` / `validators: null`, at which point
-/// this case should move back into the strict `definition_hashes` loop.
+/// Pins the *first* of `all_empty_lists`'s at-least-two parse blockers (see
+/// the constant's doc comment): fails loudly (a regression to investigate,
+/// not a silent fix) the moment pluto's `Definition` parser starts accepting
+/// `operators: null` / `validators: null`. That alone does not make the case
+/// parse — the masked `timestamp` blocker still applies — so a green here
+/// means "go find the next blocker", not "move this case into the strict
+/// `definition_hashes` loop".
 #[test]
 fn definition_known_divergence_null_operators_and_validators() {
     let suite = load_suite("cluster_hashing");

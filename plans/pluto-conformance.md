@@ -70,7 +70,7 @@ pluto commit actually tested. Statuses: `todo` / `in progress` / `done`.
 | 1 | Harness scaffold + secp256k1 | `secp256k1_signatures` | done | PASS | Both cases pass: sign, recover, and verify_65 all match the vector via `pluto-k1util` (33-byte SEC1 pubkey). |
 | 2 | Proto encoding + SSZ hashing | `qbft_hashing` | done | FAIL (unsigned_data_set only) | `duty` (3/3), `qbft_signing_root` (6/6), `any_string` (4/4) all PASS. `unsigned_data_set` has 10/12 strict-PASS; `empty_value` and `empty_key` are a real divergence, no ladder entry: prost's map encoding applies proto3 default-value omission *inside* map entries (skips an empty string key or empty bytes value), while charon's Go marshaler always writes both map-entry fields explicitly. See Findings. Pinned as a named known-divergence test (`unsigned_data_set_known_divergence_empty_map_entry_fields`) rather than left permanently red, so a future regression in the other 10 cases can't hide behind it; that test fails loudly if pluto's output ever changes (fixed or otherwise). Pluto's own `crates/consensus/testdata/vectors/hashproto.json` never exercises an empty key/value entry, so this suite gives it strictly broader coverage — a candidate for pluto to adopt these vectors and retire its own file, not something this repo changes. |
 | 3 | BLS threshold aggregation | `bls_threshold` | done | PASS | All 5 groups PASS: `keys` (2/2), `partials` (4/4, pubshare + partial signature), `threshold_aggregates` (4/4 distinct 3-of-4 quorums, each reproducing the one `group_signature_hex`), `recovery` (1/1, `recover_secret` yields the exact `group_secret_hex`), `plain_aggregate` (1/1, matches the pinned bytes and does **not** verify under `group_pubkey_hex`, confirming plain aggregation is not a threshold-signature substitute). `group_signature_hex` also verifies under `group_pubkey_hex`. `pluto-crypto`'s `BlstImpl`/`Tbls` API matched the brief's guesses exactly; no divergence found. |
-| 4 | Cluster hashes + lock verification | `cluster_hashing` | done | FAIL (2 known-divergence cases pinned) | `definition` 5/6 strict-PASS (`config_hash` and `definition_hash` both match on 5 cases, including the unsigned/signed pair proving config_hash is signature-independent); `all_empty_lists` is a real divergence, pinned (see Findings). `lock` 3/4 strict-PASS (`lock_hash` matches and `verify_hashes` succeeds on 3); `validator_without_deposit_data` is a second real divergence, pinned (see Findings). `real_keys_3_of_4`: hashes verify; the full `verify_signatures(&EthClient::new(""))` chain is asserted to fail specifically at the definition EIP-712 stage (`LockError::DefinitionSignaturesVerificationFailed`) because its operator/creator signatures are unavoidable placeholders (charon's EIP-712 signing helpers aren't exported for vector generation) — `Lock::verify_signatures` short-circuits there, so its private BLS-aggregate and node-signature checks are never reached from this external crate; that half is a coverage gap (not a failure), noted in the test's doc comment rather than mocked around. |
+| 4 | Cluster hashes + lock verification | `cluster_hashing` | done | FAIL (2 pinned known-divergence cases; at least 3 distinct affected fields — a lower bound, not a total) | `definition` 5/6 strict-PASS (`config_hash` and `definition_hash` both match on 5 cases, including the unsigned/signed pair proving config_hash is signature-independent); `all_empty_lists` is a real divergence, pinned (see Findings) — it carries **at least two independent parse blockers** (`operators`/`validators` null-rejection, then a masked `timestamp` missing-field rejection once the first is hypothetically fixed), so a partial upstream fix will not make it pass. `lock` 3/4 strict-PASS (`lock_hash` matches and `verify_hashes` succeeds on 3); `validator_without_deposit_data` is a second real divergence, pinned (see Findings). `real_keys_3_of_4`: hashes verify; the full `verify_signatures(&EthClient::new(""))` chain is asserted to fail specifically at the definition EIP-712 stage (`LockError::DefinitionSignaturesVerificationFailed`) because its operator/creator signatures are unavoidable placeholders (charon's EIP-712 signing helpers aren't exported for vector generation) — `Lock::verify_signatures` short-circuits there, so its private BLS-aggregate and node-signature checks are never reached from this external crate; that half is a coverage gap (not a failure), noted in the test's doc comment rather than mocked around. |
 | 5 | Priority scoring | `priority_scoring` | todo | — | |
 | 6 | Round timer deadlines | `timer_deadlines` | todo | — | |
 | 7 | QBFT message limits | `qbft_msg_limits` | todo | — | |
@@ -122,12 +122,14 @@ whether a ladder entry covers it, and whether it was reported upstream._
   operation" reading, but the divergence itself (pluto and charon hashing the same
   adversarial/malformed bytes differently) is still real and still a FAIL.
 
-- **Pluto's `Definition`/`Lock` parsers reject the exact `null`/absent-key JSON
-  shapes charon's own Go marshaler produces for empty lists (FAIL, task 4,
-  `cluster_hashing/definition/all_empty_lists` and
-  `cluster_hashing/lock/validator_without_deposit_data`).** Two independent
-  instances of the same root cause: pluto's serde structs are missing
-  `#[serde(default)]` on `Vec` fields that charon's Go structs mark differently.
+- **Pluto's v1.10 `Definition`/`Lock` structs are missing `#[serde(default)]` on
+  multiple fields charon's Go marshaler may legitimately omit or null out (FAIL,
+  task 4, `cluster_hashing/definition/all_empty_lists` and
+  `cluster_hashing/lock/validator_without_deposit_data`).** One root cause —
+  a missing serde default — recurring across at least three fields; **the true
+  count of affected fields is not established**, because the first parse error
+  in each case short-circuits `serde_json` before any later field is checked, so
+  this list is a lower bound, not a total. Confirmed instances:
   (1) `cluster/definition.go`'s `Operators []Operator` and
   `ValidatorAddresses []ValidatorAddresses` fields have `json:"operators"` /
   `json:"validators"` with **no** `omitempty`, so Go's `encoding/json` marshals a
@@ -145,23 +147,41 @@ whether a ladder entry covers it, and whether it was reported upstream._
   `DistValidatorV1x8orLater.partial_deposit_data: Vec<DepositData>`
   (`pluto/crates/cluster/src/distvalidator.rs`) also carries no
   `#[serde(default)]`, so `serde_json` rejects the file with "missing field
-  `partial_deposit_data`" rather than defaulting to an empty vec. No
-  `charon_anchor.json` ladder entry covers either gap — the ladder tracks
-  *protocol behaviour* that postdates charon v1.7.1, and both of these field tags
+  `partial_deposit_data`" rather than defaulting to an empty vec. (3) **Masked
+  behind (1)** in `all_empty_lists`: charon's `definitionJSONv1x10to11` struct
+  (`cluster/definition.go`) tags `Timestamp` with `omitempty` (as it also does
+  `Name`), so a definition with an empty timestamp legitimately omits the key.
+  Pluto's `DefinitionV1x10.name: String` does carry `#[serde(default)]` and
+  handles this correctly, but `DefinitionV1x10.timestamp: String`
+  (`pluto/crates/cluster/src/definition.rs`) does not, so once (1) is
+  hypothetically fixed the same case still fails with "missing field
+  `timestamp`". Confirmed directly: mutating `all_empty_lists`'s `operators`/
+  `validators` from `null` to `[]` (simulating a fix to (1)) still fails to
+  parse on the missing `timestamp` key; adding an empty `timestamp` string on
+  top of that mutation parses successfully, with no further blocker found in
+  that specific probe (not a proof no more exist elsewhere in the struct). No
+  `charon_anchor.json` ladder entry covers any of this — the ladder tracks
+  *protocol behaviour* that postdates charon v1.7.1, and all of these field tags
   are unchanged, long-standing charon serialization behaviour, not a recent
   charon feature. Reachability: a definition with zero operators is degenerate
-  (no real cluster has none), but a validator with zero partial deposits is a
-  realistic shape — e.g. a validator whose deposit was already broadcast through
-  another channel, or an intermediate DKG artifact captured before partial
-  deposit data is attached. Either way, a real charon-produced JSON file in that
-  shape is rejected outright by pluto's loader, which is a genuine interop risk
-  for any tool (this repo's own vector generator included) that hands pluto a
-  charon artifact verbatim rather than a pluto-shaped round-trip. Pinned as two
-  named known-divergence tests
+  (no real cluster has none), but a validator with zero partial deposits, or a
+  definition with an empty timestamp, are realistic shapes — e.g. a validator
+  whose deposit was already broadcast through another channel, an intermediate
+  DKG artifact captured before partial deposit data is attached, or a definition
+  built without a timestamp set. Either way, a real charon-produced JSON file in
+  any of these shapes is rejected outright by pluto's loader, which is a genuine
+  interop risk for any tool (this repo's own vector generator included) that
+  hands pluto a charon artifact verbatim rather than a pluto-shaped round-trip.
+  Pinned as two named known-divergence tests
   (`definition_known_divergence_null_operators_and_validators`,
   `lock_known_divergence_missing_partial_deposit_data`) rather than left
   permanently red, each asserting the current rejection and its error shape, so
-  either flips loudly the moment pluto's parser is fixed. Not reported upstream
+  either flips loudly the moment pluto's parser changes — the `definition` test's
+  doc comment now states explicitly that `all_empty_lists` has at least two
+  independent parse blockers stacked, so a partial upstream fix (null handling
+  alone) will not turn it green; the masked `timestamp` gap is not given its own
+  pinned test, since it is unreachable while the first blocker stands and a test
+  that cannot run is worse than a documented gap. Not reported upstream
   to pluto yet.
 
 ## Global Constraints
