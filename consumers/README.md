@@ -7,7 +7,7 @@ executes them: a suite nobody runs is a document, not a test.
 | Consumer | Status | Location |
 | --------------------------------- | ---------------------------------------------- | ----------- |
 | Charon (Go) | All 9 suites, 314 subtests, verified at anchor `6054bcb2` | [`go/`](go) |
-| Pluto (Rust) | Not written yet | — |
+| Pluto (Rust) | in progress — see plans/pluto-conformance.md | [rust/](rust) |
 
 These files live here rather than in Charon because this repository cannot merge
 into Charon. They are laid out to mirror Charon's own tree, so placing them is a
@@ -81,3 +81,19 @@ produced by Charon and then published, so a failure means Charon has moved away
 from the protocol every other implementation was told to implement. The
 regeneration path is deliberately not automatic — see the spec's
 `test_vectors/README.md`.
+
+## Pluto consumer
+
+`rust/` is a standalone Cargo package that path-depends on a pluto checkout
+placed as a sibling of this repository (`../pluto` relative to
+`distributed-validator-specs/`, i.e. `../../../pluto` from `consumers/rust/`).
+Unlike the Go consumer, nothing is copied into pluto and pluto is never
+modified — the harness reads pluto's crates in place.
+
+```bash
+cd consumers/rust && cargo test
+```
+
+Vectors are read from `../../test_vectors/` at test time (no vendoring), or
+from `SPEC_VECTORS_DIR` when set. Progress and per-suite verdicts are tracked
+in `plans/pluto-conformance.md`.

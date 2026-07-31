@@ -63,11 +63,11 @@ or refuted by the task that covers it:
 Progress tracking lives here. Update the row when a task's verdict is in; record the
 pluto commit actually tested. Statuses: `todo` / `in progress` / `done`.
 
-**Pluto commit under test:** _(fill in at Task 1: `git -C ~/pluto rev-parse --short HEAD`)_
+**Pluto commit under test:** `67088a2`
 
 | # | Check | Suite | Status | Verdict | Notes |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Harness scaffold + secp256k1 | `secp256k1_signatures` | todo | — | |
+| 1 | Harness scaffold + secp256k1 | `secp256k1_signatures` | done | PASS | Both cases pass: sign, recover, and verify_65 all match the vector via `pluto-k1util` (33-byte SEC1 pubkey). |
 | 2 | Proto encoding + SSZ hashing | `qbft_hashing` | todo | — | |
 | 3 | BLS threshold aggregation | `bls_threshold` | todo | — | |
 | 4 | Cluster hashes + lock verification | `cluster_hashing` | todo | — | |

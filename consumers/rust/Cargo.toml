@@ -1,0 +1,19 @@
+[package]
+name = "spec-vectors-pluto"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Runs the spec's test_vectors/ suites against a pluto checkout at ../../../pluto"
+
+[dependencies]
+serde_json = "1.0"
+hex = "0.4.3"
+
+[dev-dependencies]
+serde_json = "1.0"
+hex = "0.4.3"
+pluto-k1util = { path = "../../../pluto/crates/k1util" }
+k256 = { version = "0.13.4", features = ["ecdsa", "sha256"] }
+
+[patch.crates-io]
+multistream-select = { path = "../../../pluto/third_party/multistream-select" }
