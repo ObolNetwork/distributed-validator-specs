@@ -75,7 +75,7 @@ pluto commit actually tested. Statuses: `todo` / `in progress` / `done`.
 | 6 | Round timer deadlines | `timer_deadlines` | done | round_timeout: PASS **only under `ProposalTimeout` enabled**, a documented non-default precondition (pluto's *default* config has a pinned, real divergence on `PROPOSER`/round-1 cases — see Notes and Findings); deadline: ABSENT-OK, with a real code-level slot-invariance pin (not just a comment); duty_start_delay: UNREACHABLE | `round_timeouts_with_proposal_timeout_enabled`: 216/216 PASS, but only with `Feature::ProposalTimeout` explicitly enabled (it is `Status::Alpha`, off under pluto's `Config::default()`). `round_timeouts_pluto_default_feature_set` runs the same 216 cases under pluto's actual default `FeatureSet` and pins the resulting divergence: the 207 non-`PROPOSER`-round-1 cases still match the vectors, but all 9 `PROPOSER`/round-1 cases (3 slots x 3 slot durations) diverge — pluto's default gives 1s, the vectors (which assume `ProposalTimeout` enabled) expect 1.5s. This is a real, pinned known-divergence (see Findings), not swept under the enabled-feature test's PASS. `deadline_nanos`: `round_timeout_is_duty_slot_invariant` builds two timers per (duty_type, round) combination (24 total, covering all cases) differing only in `slot` (0 vs. 7231) and asserts bit-identical measured timeouts — a real code pin for "no timer reads slot", not a doc comment, so it fails loudly if `with_duty`/`RoundTimer::timer` ever grows slot-dependence; genesis-invariance is structurally guaranteed (the API has no genesis parameter at all) and is stated as such rather than tested. Matches ladder entry "Deterministic (genesis-derived) eager double linear round deadlines" (`first_charon_release: v1.9.0` > pluto's v1.7.1 anchor). `duty_start_delay_nanos` is UNREACHABLE: `delay_slot_offset` (`crates/core/src/scheduler.rs`) is a non-`pub` `async fn` with no external caller, confirmed still private. |
 | 7 | QBFT message limits | `qbft_msg_limits` | done | ABSENT-OK (counts, both directions); PASS (wire_size) | `counts` (11/11 cases run): pluto has neither the spec's `2n` justification cap nor any `2*(j+1)` values cap. Its own cap is `4 * node_count()` (component.rs `MAX_JUSTIFICATIONS_PER_NODE = 4`, strict `>`), and there is no values-length check anywhere in `crates/consensus/src`/`crates/core/src`. Every counts case's `justification_count` stays at/under pluto's `4n` (proven structurally in the test, not by case name), so pluto accepts all 11 cases: 5 match the spec's `accepted: true` cases outright, 6 are ABSENT-OK divergences (spec says reject — `too_many_justifications` or `too_many_values` — pluto accepts) against ladder entry "QBFT DECIDED-resend rate limit and message size/count limits" (`first_charon_release: null`). Two extra tests pin pluto's own real boundary directly, since no vector case reaches it: `4 * nodes` justifications accepted, `4 * nodes + 1` rejected with `Error::TooManyJustifications { count, max }` asserted exactly (not just "any error"). `wire_size` (4/4 cases): `MAX_CONSENSUS_MSG_SIZE` (32 MiB) and `MAX_MESSAGE_SIZE` (128 MiB) constants pinned; enforcement runs the real `pluto_p2p::proto::read_protobuf_with_max_size` reader (mirroring `qbft/p2p.rs`'s own unit tests) over `futures::io::Cursor` — 1024 bytes and exactly 32 MiB accepted (round-trip decode verified byte-for-byte), 32 MiB+1 and 128 MiB rejected with a "too large" reason, matching `msg_too_large` exactly. `DeadlinerHandle::always` from the probe doc turned out to be `#[cfg(test)]`-gated inside pluto_core (not reachable externally); worked around with the real public `DeadlinerTask::start` and a custom future-deadline `DeadlineCalculator` (pluto's own public `NeverExpiringCalculator` returns `NoDeadline`, which `handle`'s strict `!= Scheduled` check treats as `Error::DutyExpired` — a real gotcha, not a doc typo). See Findings for the `4n` cap as its own hardening decision. |
 | 8 | DECIDED-resend limiting | `qbft_decided_resends` | done | ABSENT-OK (pin reading PASS; spec-reading mismatches reported per case) | Both cases run against the real `pluto_core::qbft::run` state machine (not code inspection alone), driven to DECIDED at round 1 via the minimal justified PRE-PREPARE + quorum PREPARE + quorum COMMIT sequence, then fed each case's ROUND-CHANGE event sequence one at a time. Pin reading (pluto's actual, unconditional rule — rebroadcast DECIDED on every post-decision ROUND-CHANGE from a source other than the deciding process, no cap, no round check) holds for all 28 events across both cases: PASS. Spec reading (the vector's per-event `rebroadcast` expectations, which encode a 16-per-source cap plus a strictly-increasing-round-per-source dedup) diverges on 4/7 events in `dedup_duplicates_and_stale_rounds` (the duplicate-round and stale-round entries) and 5/21 in `resend_cap_per_source` (the 17th-through-21st events, past pluto's absent 16-cap) — reported, not asserted, matching ladder entry "QBFT DECIDED-resend rate limit and message size/count limits" (`first_charon_release: null`). `SomeMsg`/`Definition`/`Transport`/`QbftLogger` were externally implementable exactly as the probe doc claimed, confirming `run` is fully reachable from an external crate. |
-| 9 | Sender binding + peer map | `parsigex_sender_binding` | todo | — | |
+| 9 | Sender binding + peer map | `parsigex_sender_binding` | done | `cases`: ABSENT-OK; `peer_map`: UNREACHABLE | `cases` (6/6 run) driven for real through `pluto_parsigex::new_eth2_verifier` (a genuine BLS-signed `SignedVoluntaryExit`, resolved against a `BeaconMock`): its `Verifier` closure has no sender parameter at all, so acceptance depends solely on whether the claimed `share_idx` is a registered key with a genuinely valid signature. 4/6 cases coincide with the vector (`own_share_index_accepted`, `assigned_non_contiguous_share_index_accepted`, `mismatched_share_index_rejected`, `non_positive_share_index_rejected`); 2/6 diverge (`another_peers_share_index_rejected`, `unknown_sender_rejected`) because pluto accepts a genuinely-signed but wrongly-attributed share index — pinned against ladder entry "Sender-bound share indices in the DKG lock-hash exchange" (`first_charon_release: null`). `peer_map` (3/3 enumerated, not runnable): every pluto function that builds or validates a peer/share-index map is either arithmetically position-derived (`Peer::share_idx` = `position + 1`, `crates/p2p/src/peer.rs`, used by the reachable `Definition::node_idx`, `crates/cluster/src/definition.rs`) and so cannot even represent the vectors' non-contiguous assignment (share index 4 for the second of two peers), or private/`pub(crate)` with no external entry point (`crates/dkg/src/node.rs::setup_p2p`, `crates/dkg/src/frostp2p/transport.rs::validate_peer_share_indices`, `crates/app/src/node/mod.rs::build_pub_shares_by_key`). This predates charon v1.7.1 with no ladder cover, so it is a genuine coverage gap, not excused as ABSENT-OK. |
 | 10 | Coverage guard + docs | all | todo | — | |
 
 ## Findings
@@ -273,6 +273,49 @@ whether a ladder entry covers it, and whether it was reported upstream._
   released charon — so this is ABSENT-OK at pluto's charon-v1.7.1 anchor, the
   same ladder entry task 7 matches for the justification/values caps. Not
   reported upstream — matches charon's own absence at the pinned anchor.
+
+- **No sender-bound share-index check anywhere reachable in `parsigex`/`dkg`
+  (ABSENT-OK, task 9, `parsigex_sender_binding/cases`).** `pluto_parsigex::new_eth2_verifier`
+  (`crates/parsigex/src/behaviour.rs`, re-exported at `crates/parsigex/src/lib.rs`) is the
+  one reachable share-index verifier in pluto, and its `Verifier` closure type,
+  `Fn(Duty, PubKey, ParSignedData) -> VerifyFuture`, has no sender/peer-identity
+  parameter — confirmed by reading `new_eth2_verifier` and its only caller
+  (`crates/parsigex/src/handler.rs`) in full. Driven for real (a genuinely BLS-signed
+  `SignedVoluntaryExit`, signing domain resolved against a `pluto_testutil::BeaconMock`),
+  its accept/reject decision reduces entirely to "is `share_idx` a registered key with a
+  valid signature": 2 of 6 vector cases diverge because pluto accepts a share index that
+  is genuinely, validly signed but belongs to a different peer than the one claiming it
+  (`another_peers_share_index_rejected`) or to no registered peer at all
+  (`unknown_sender_rejected`). Ladder entry "Sender-bound share indices in the DKG
+  lock-hash exchange" (`first_charon_release: null`) covers this exactly — no released
+  charon carries the check either, so this is ABSENT-OK, not reported upstream.
+  Note that DKG's own lock-hash exchange does not even go through this verifier: `Exchanger`
+  (`crates/dkg/src/exchanger.rs`) wires parsigex with a no-op verifier and instead checks
+  signatures post-hoc in `crates/dkg/src/aggregate.rs::agg_lock_hash_sig`/
+  `verify_threshold_partials` (same no-sender-parameter shape) — but `crates/dkg/src/lib.rs`
+  declares `mod aggregate;` without `pub`, so that code is not reachable from an external
+  crate at all; `new_eth2_verifier` is the closest reachable equivalent, not the exact
+  code path DKG itself uses.
+
+- **No reachable construction validates a peer/share-index map (FAIL by omission —
+  coverage gap, task 9, `parsigex_sender_binding/peer_map`).** This rule predates charon
+  v1.7.1, so no ladder entry excuses it, but no reachable pluto API can even be exercised
+  to check it. Every share_idx map-builder found is one of: (a) arithmetically
+  position-derived and thus structurally incapable of producing the vectors' non-contiguous
+  assignment (share index 4 for the second of two peers) — `crates/p2p/src/peer.rs::Peer::share_idx`
+  (`self.index.wrapping_add(1)`), used by the reachable `crates/cluster/src/definition.rs::Definition::node_idx`,
+  and by `crates/app/src/node/mod.rs::build_pub_shares_by_key` (`(pos as u64).saturating_add(1)`,
+  itself private); or (b) a genuine peer-indexed map with real validation
+  (`crates/dkg/src/frostp2p/transport.rs::validate_peer_share_indices`, which does reject
+  `share_idx == 0`, duplicate indices, and a map missing the local peer's index) that is
+  private to its module, whose only caller `new_frost_p2p` is `pub(crate)`, inside a `mod frostp2p;`
+  (private) declared in `crates/dkg/src/lib.rs`; or (c) `crates/dkg/src/node.rs::setup_p2p`,
+  which builds the map passed to that validator but is itself `pub(crate)` inside a private
+  `mod node;`. Verdict: UNREACHABLE, not FAIL — there is no reachable path to demonstrate
+  actual acceptance of an invalid map, only its structural absence. Worth flagging to pluto
+  as a coverage gap (no unit test anywhere in the `dkg`/`parsigex` crates exercises
+  `validate_peer_share_indices` or an equivalent map-completeness check), not reported
+  upstream as a defect since we can't observe the behavior from outside the crate.
 
 ## Global Constraints
 
