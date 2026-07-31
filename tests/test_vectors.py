@@ -37,12 +37,24 @@ from dv_spec.encoding.proto import (
     encode_unsigned_data_set,
 )
 from dv_spec.encoding.ssz import hash_proto
+from dv_spec.subspecs.consensus.cryptography import hash_value
+from dv_spec.subspecs.consensus.qbft.definition import Definition as QBFTDefinition
 from dv_spec.subspecs.consensus.qbft.hashing import encode_qbft_msg, qbft_signing_root
-from dv_spec.subspecs.consensus.qbft.message import MsgType, QBFTMsg
+from dv_spec.subspecs.consensus.qbft.message import (
+    MAX_CONSENSUS_MSG_SIZE,
+    MsgType,
+    QBFTConsensusMsg,
+    QBFTMsg,
+    verify_msg_limits,
+)
+from dv_spec.subspecs.consensus.qbft.protocol import QBFTConsensus
+from dv_spec.subspecs.consensus.qbft.transport import PeerInfo, Transport
 from dv_spec.subspecs.consensus.timer.timer import (
     eager_double_linear_deadline_nanos,
     get_duty_start_delay_nanos,
 )
+from dv_spec.subspecs.parsigex.helpers import validate_exchange_peers, verify_peer_share_idx
+from dv_spec.subspecs.parsigex.message import ParSignedData
 from dv_spec.subspecs.priority.message import PriorityMsg, PriorityTopicProposal
 from dv_spec.subspecs.priority.scoring import calculate_result
 from dv_spec.types.duty import Duty, DutyType
@@ -144,7 +156,7 @@ def test_priority_scoring(case: Dict[str, Any]) -> None:
             peer_id=peer["peer_id"],
             topics=[
                 PriorityTopicProposal(topic=inputs["topic"], priorities=peer["priorities"]),
-                PriorityTopicProposal(topic="ignored", priorities=[]),
+                PriorityTopicProposal(topic=inputs["ignored_topic"], priorities=[]),
             ],
         )
         for peer in inputs["peers"]
@@ -156,6 +168,12 @@ def test_priority_scoring(case: Dict[str, Any]) -> None:
     assert [
         {"priority": scored.priority, "score": scored.score} for scored in topic_result.priorities
     ] == case["result"]
+
+    # The empty topic every peer proposes must survive into the result with no
+    # priorities — dropped-topic and nothing-met-the-threshold are different
+    # outcomes, and the suite pins the distinction.
+    ignored = next(topic for topic in result.topics if topic.topic == inputs["ignored_topic"])
+    assert ignored.priorities == []
 
 
 def test_priority_scoring_is_independent_of_message_order() -> None:
@@ -395,6 +413,165 @@ def test_cluster_lock_reuses_the_bls_threshold_sharing() -> None:
         pubshares[index] for index in sorted(pubshares)
     ]
     assert lock.validators[0].pubkey.hex() == load(BLS)["group_pubkey_hex"]
+
+
+# --- rejection suites -------------------------------------------------------
+#
+# These consume the vectors the way an implementation would: every input is built
+# from the case's `input` object, not from the helper that generated it. Sharing a
+# builder with `scripts/generate_test_vectors.py` would let a wrong count agree
+# with itself. One overlap remains: the decided-resends replay forges its decided
+# state by planting a commit quorum, the same technique the generator uses, so a
+# change to how the spec detects decision moves both together. The Go consumer
+# suite drives a real instance to decision instead.
+
+LIMITS = "qbft_msg_limits"
+RESENDS = "qbft_decided_resends"
+BINDING = "parsigex_sender_binding"
+
+
+@pytest.mark.parametrize("case", cases(LIMITS, "counts"))
+def test_qbft_msg_limit_counts(case: Dict[str, Any]) -> None:
+    inputs = case["input"]
+
+    # The limits the case ships as guidance must be charon's formulas, or an
+    # implementer trusting the metadata is misled even when the verdict is right.
+    assert case["max_justifications"] == 2 * inputs["nodes"]
+    assert case["max_values"] == 2 * (inputs["justification_count"] + 1)
+
+    duty = Duty(slot=1, type=DutyType.ATTESTER)
+    template = QBFTMsg(type=MsgType.PREPARE, duty=duty, peer_idx=0, round=1)
+    consensus_msg = QBFTConsensusMsg(
+        msg=template,
+        justification=[template] * inputs["justification_count"],
+        values=[bytes([index % 256]) for index in range(inputs["value_count"])],
+    )
+
+    if case["accepted"]:
+        verify_msg_limits(consensus_msg, inputs["nodes"])
+        return
+
+    with pytest.raises(ValueError) as raised:
+        verify_msg_limits(consensus_msg, inputs["nodes"])
+
+    # The reason matters as much as the rejection: an implementation that rejected
+    # on the value count where charon rejects on the justification count would
+    # disagree the moment both limits are exceeded.
+    expected = "justifications" if case["reason"] == "too_many_justifications" else "values"
+    assert expected in str(raised.value)
+
+
+@pytest.mark.parametrize("case", cases(LIMITS, "wire_size"))
+def test_qbft_msg_wire_size_limit(case: Dict[str, Any]) -> None:
+    assert (case["input"]["wire_size_bytes"] <= MAX_CONSENSUS_MSG_SIZE) == case["accepted"]
+    assert case["reason"] == (None if case["accepted"] else "msg_too_large")
+
+
+@pytest.mark.parametrize("case", cases(RESENDS, "cases"))
+def test_qbft_decided_resends(case: Dict[str, Any]) -> None:
+    inputs = case["input"]
+    nodes = inputs["nodes"]
+    duty = Duty(slot=100, type=DutyType.ATTESTER)
+    proposal_value = b"test_block"
+
+    consensus = QBFTConsensus(
+        d=QBFTDefinition(nodes=nodes),
+        t=Transport(
+            private_key=b"test_key" * 4,
+            peers=[
+                PeerInfo(peer_idx=index, public_key=b"test_key", peer_id=f"peer_{index}")
+                for index in range(nodes)
+            ],
+        ),
+        duty=duty,
+        peer=0,
+        proposal_value=proposal_value,
+    )
+    consensus.q_commit = [
+        QBFTMsg(
+            type=MsgType.COMMIT,
+            duty=duty,
+            peer_idx=index,
+            round=inputs["decided_round"],
+            signature=b"0" * 65,
+            value_hash=hash_value(proposal_value),
+        )
+        for index in range(nodes - 1)
+    ]
+
+    rebroadcast = []
+    for event in inputs["events"]:
+        responses = consensus.handle_message(
+            QBFTConsensusMsg(
+                msg=QBFTMsg(
+                    type=MsgType.ROUND_CHANGE,
+                    duty=duty,
+                    peer_idx=event["source"],
+                    round=event["round"],
+                    signature=b"0" * 65,
+                )
+            )
+        )
+        # What comes back must be the decision itself — the decided value under
+        # a DECIDED type, justified by the commit quorum — not merely something.
+        for response in responses:
+            assert response.msg.type == MsgType.DECIDED
+            assert response.msg.value_hash == hash_value(proposal_value)
+            assert response.justification == consensus.q_commit
+
+        rebroadcast.append(bool(responses))
+
+    assert rebroadcast == case["rebroadcast"]
+    assert sum(rebroadcast) == case["total_rebroadcasts"]
+
+
+@pytest.mark.parametrize("case", cases(BINDING, "cases"))
+def test_parsigex_sender_binding(case: Dict[str, Any]) -> None:
+    inputs = case["input"]
+    # model_construct bypasses validation, so the non-positive share index reaches
+    # the verifier. Charon's type carries no such constraint, and folds the
+    # non-positive and mismatched cases into one rejection.
+    data = ParSignedData.model_construct(
+        data=b"", signature=b"\x00" * 65, share_idx=inputs["share_idx"]
+    )
+
+    if case["accepted"]:
+        verify_peer_share_idx(inputs["share_idx_by_peer"], inputs["sender"], data)
+        return
+
+    with pytest.raises(ValueError) as raised:
+        verify_peer_share_idx(inputs["share_idx_by_peer"], inputs["sender"], data)
+
+    expected = "unknown peer" if case["reason"] == "unknown_peer" else "does not match"
+    assert expected in str(raised.value)
+
+
+@pytest.mark.parametrize("case", cases(BINDING, "peer_map"))
+def test_parsigex_peer_map_validation(case: Dict[str, Any]) -> None:
+    inputs = case["input"]
+
+    if case["accepted"]:
+        validate_exchange_peers(inputs["peers"], inputs["share_idx_by_peer"], inputs["peer_idx"])
+        return
+
+    with pytest.raises(ValueError, match="missing valid share index"):
+        validate_exchange_peers(inputs["peers"], inputs["share_idx_by_peer"], inputs["peer_idx"])
+
+
+def test_rejection_suites_carry_both_verdicts() -> None:
+    # A suite that drifted to all-accept or all-reject would still pass every case
+    # above while testing nothing, so pin that each carries both.
+    for suite, groups in (
+        (LIMITS, ("counts", "wire_size")),
+        (BINDING, ("cases", "peer_map")),
+    ):
+        loaded = load(suite)
+        for group in groups:
+            verdicts = {case["accepted"] for case in loaded[group]}
+            assert verdicts == {True, False}, f"{suite}/{group} must cover both verdicts"
+
+    for case in load(RESENDS)["cases"]:
+        assert set(case["rebroadcast"]) == {True, False}, f"{case['name']} must cover both"
 
 
 def test_every_suite_declares_provenance() -> None:

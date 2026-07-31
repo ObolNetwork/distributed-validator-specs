@@ -1,0 +1,57 @@
+name: Proto parity
+
+# `proto/` is the wire schema implementers read, and nothing in this repo
+# executes it — the encoders carry their own explicit field numbers — so a
+# divergence from Charon is invisible to every other test here.
+#
+# Unlike the staleness check, this compares against the *pinned anchor* rather
+# than Charon `main`, so its result changes only when this repository changes.
+# That makes it safe on a pull request: it cannot go red because Charon moved.
+#
+# The paths filter means unrelated PRs skip this job. Do not make it a required
+# status check without also giving it a no-op fallback, or skipped runs will
+# block merges. The two lists are duplicated because GitHub Actions does not
+# support YAML anchors.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "proto/**"
+      - "charon_anchor.json"
+      - "scripts/charon_repo.py"
+      - "scripts/check_proto_parity.py"
+      - ".github/workflows/proto-parity.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "proto/**"
+      - "charon_anchor.json"
+      - "scripts/charon_repo.py"
+      - "scripts/check_proto_parity.py"
+      - ".github/workflows/proto-parity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    name: proto/ matches Charon at the anchor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout spec
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+          python-version: "3.13"
+
+      - name: Compare proto/ against Charon
+        run: uv run python scripts/check_proto_parity.py

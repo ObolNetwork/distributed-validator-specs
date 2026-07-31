@@ -40,19 +40,37 @@ Out of scope: cryptographic signature routines, consensus algorithm implementati
 
 ## Protocol Identifiers (libp2p)
 
-All messages are sent under protocol ID:
+Priority has two protocol IDs for the same protocol, listed here in order of
+precedence:
 
 ```text
-charon/priority/2.0.0
+/charon/priority/2.0.0     preferred
+charon/priority/2.0.0      legacy, no leading "/"
 ```
 
-> **Warning**: Unlike every other protocol in this specification, this
-> protocol ID has **no leading `/`**. This is a historical accident in
-> Charon's implementation (`core/priority/prioritiser.go`) that is now
-> normative: the string above is exactly what appears on the wire, and
-> alternative implementations (e.g. Pluto) must reproduce it verbatim to
-> interoperate. If Charon ever versions this protocol, the leading slash
-> should be restored at that point.
+The legacy spelling is missing its leading `/`, unlike every other protocol in
+this specification — a historical accident in Charon
+(`core/priority/prioritiser.go`) that put the bare string on the wire. Charon
+normalised the ID and kept the old spelling as an alias, so the wire format is
+identical under either and the version stays at `2.0.0`.
+
+Three rules follow, and an implementation needs all three to interoperate:
+
+1. **Dialling**: offer both IDs, the preferred one first, and use whichever the
+   peer negotiates. Charon obtains this ordering with
+   `p2p.WithDelimitedProtocol`, which prepends.
+2. **Listening**: serve both IDs, registering a handler for each one
+   **separately, as an exact match**.
+3. **Do not register the two IDs together under a common prefix.** They share no
+   common prefix, so a combined registration reduces that prefix to the bare
+   wildcard `*` — and libp2p identify then advertises `*` to peers in place of
+   either real protocol ID.
+
+> **Warning**: serving only the preferred ID is not sufficient. Every Charon
+> release up to and including `v1.11.0-rc1` speaks the legacy spelling alone, so
+> an implementation that drops it cannot exchange priorities with any released
+> Charon. Charon's own code targets `v1.12` for the preferred ID and `v1.14` for
+> removing the alias.
 
 ## Exchange Pattern
 
@@ -102,10 +120,10 @@ When initiating a priority instance:
 
 ```
 msg := PriorityMsg{
-  duty: duty,
-  peer_id: own_peer_id,
-  topics: [topics...],
-  signature: nil
+  duty: duty,          // field 1
+  topics: [topics...], // field 2
+  peer_id: own_peer_id,// field 3
+  signature: nil       // field 4
 }
 
 hash := ssz_hash(deterministic_marshal(msg))
@@ -113,6 +131,12 @@ msg.signature = secp256k1_sign(private_key, hash)
 ```
 
 The signature is computed over the entire message with the signature field set to nil.
+
+Because the signature covers the encoding, the field numbers are part of the
+protocol: `topics` is field 2 and `peer_id` is field 3, per
+[`proto/priority.proto`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/proto/priority.proto).
+Transposing the two yields a signing root no peer can reproduce, so no signature
+verifies. `scripts/check_proto_parity.py` pins this against Charon.
 
 ### 2. Exchange with Peers
 
@@ -178,7 +202,7 @@ Once exchange completes, calculate the cluster-wide result:
 
 4. **Filter by threshold**: Only include priorities that appear in at least `minRequired` peer messages
 
-5. **Sort priorities**: Within each topic, sort by score descending
+5. **Sort priorities**: Within each topic, sort by score descending. The sort **must be stable**, so equal-scoring priorities keep the order in which they were first seen — which is why the messages are processed in ascending peer ID order.
 
 6. **Deterministic ordering**: Sort topics by hash for deterministic output
 
@@ -273,7 +297,7 @@ The scoring algorithm ensures deterministic, fair prioritization:
 
 ## Interop Notes
 
-- **Protocol versioning**: The protocol ID `charon/priority/2.0.0` (note: no leading `/`, see warning above) identifies the version; future versions may use different IDs
+- **Protocol versioning**: Both `/charon/priority/2.0.0` and the legacy `charon/priority/2.0.0` identify version `2.0.0` of this protocol and must both be served (see [Protocol Identifiers](#protocol-identifiers-libp2p)); future versions may use different IDs
 - **Signature algorithm**: Uses secp256k1 ECDSA signatures with recovery; public keys derived from libp2p peer IDs
 - **Hash function**: Uses SSZ (Simple Serialize) hashing over deterministic protobuf marshalling for message signing and priority deduplication
 - **Protobuf Any encoding**: Topics and priorities are encoded as protobuf `Any` types for flexibility; current implementation uses `structpb.StringValue` for both
@@ -283,7 +307,7 @@ The scoring algorithm ensures deterministic, fair prioritization:
 
 - **Topic ordering**: Topics in results are ordered by their SSZ hash for deterministic output across all peers
 
-- **Tie breaking**: When priorities have identical scores, they are ordered by their SSZ hash (deterministic, but arbitrary)
+- **Tie breaking**: When priorities have identical scores, the one first proposed wins, taking peers in ascending peer ID order. This requires a stable sort by score over messages pre-sorted by peer ID; it is *not* a tie-break by priority hash (that ordering applies to topics, not to priorities within a topic). Charon sorts stably as of `6054bcb2`; releases up to `v1.11.0-rc1` used a non-stable sort that agreed only because Go's pdqsort falls back to insertion sort below thirteen elements
 
 - **Minimum required**: Typically set to threshold (ceil(2n/3)); priorities appearing in fewer peer messages are excluded from results
 

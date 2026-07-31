@@ -20,8 +20,21 @@ Charon is the reference implementation these specs are derived from. Pluto is an
 ### Charon version anchor
 
 These specs track Charon `main` and were last validated against Charon
-commit `2eb6798e` (2026-07-14, after `v1.10.3`, during `v1.11.0` release
+commit `6054bcb2` (2026-07-29, after `v1.10.3`, during `v1.11.0` release
 candidates).
+
+The anchor is also recorded machine-readably in
+[`charon_anchor.json`](charon_anchor.json), alongside the Charon paths this spec
+covers and the Charon `.proto` file each file in [`proto/`](proto) mirrors. Two
+checks read it:
+
+| Check | Question | When it runs |
+| ------------------------------------------------------------------ | ---------------------------------------------- | ------------------- |
+| [`check_charon_drift.py`](scripts/check_charon_drift.py) | What moved in Charon *since* the anchor?       | Weekly, and on demand |
+| [`check_proto_parity.py`](scripts/check_proto_parity.py) | Does `proto/` still match Charon *at* the anchor? | On any change to `proto/` |
+
+Run either yourself with `uv run python scripts/<name>.py`, optionally against a
+local checkout: `--repo-path ~/charon`.
 
 Note for implementers pinned to older Charon versions (e.g. Pluto currently
 targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
@@ -30,12 +43,32 @@ targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
 | ------------------------------------------------------------------ | -------------------- |
 | `MsgSync.nickname` field (DKG sync)                                 | `v1.9.0`             |
 | Deterministic (genesis-derived) eager double linear round deadlines | `v1.9.0`             |
-| Linear round timer subsequent-round timeout fix                     | `v1.11.0`            |
-| QBFT DECIDED-resend rate limit and message size/count limits        | `v1.11.0`            |
+| Linear round timer subsequent-round timeout fix                     | unreleased (`v1.11.0` RCs) |
+| QBFT DECIDED-resend rate limit and message size/count limits        | unreleased (`v1.11.0` RCs) |
+| Preferred priority protocol ID `/charon/priority/2.0.0`             | unreleased (`main`)  |
+| Stable sort of scored priorities                                    | unreleased (`main`)  |
+| Sender-bound share indices in the DKG lock-hash exchange            | unreleased (`main`)  |
 
 All of these are backwards compatible on the wire (unknown proto fields are
 ignored; limits only reject messages no honest peer sends), so implementing
 the current spec remains interoperable with older Charon peers.
+
+This table is also machine-readable, under `behaviours` in
+[`charon_anchor.json`](charon_anchor.json), and every spec release ships it in
+`manifest.json` so a consumer can check its pinned Charon against the spec it
+pinned. See [Versioning and releases](docs/versioning.md) for how spec versions
+relate to Charon's — they deliberately do not match.
+
+The unreleased entries need care in both directions. The legacy priority
+protocol ID `charon/priority/2.0.0` is the **only** one every released Charon
+speaks, so it must still be served alongside the preferred spelling; Charon's own
+code targets `v1.12` for the preferred ID and `v1.14` for dropping the alias. The
+stable sort only changes results for a tie among thirteen or more priorities in a
+topic, which no released Charon produces. The sender binding rejects only
+partial signatures no honest peer sends. The timer fix and the QBFT limits
+shipped in the `v1.11.0` release candidates but, as of this anchor, no final
+release — they are listed as unreleased until one exists, because "first Charon
+release" must name a release a consumer can actually run.
 
 ## What's Included
 
@@ -226,6 +259,9 @@ uv run mkdocs build
 | Fix lint errors                        | `uv run ruff check --fix src tests scripts` |
 | Type check                             | `uv run mypy src tests scripts`     |
 | Regenerate test vectors                | `uv run python scripts/generate_test_vectors.py` |
+| Check for Charon drift past the anchor | `uv run python scripts/check_charon_drift.py` |
+| Check `proto/` parity at the anchor    | `uv run python scripts/check_proto_parity.py` |
+| Build a release artifact               | `uv run python scripts/build_release.py --archive` |
 | Build docs                             | `uv run mkdocs build`               |
 | Serve docs                             | `uv run mkdocs serve`               |
 | Run all quality checks (no tests/docs) | `uv run tox -e all-checks`          |

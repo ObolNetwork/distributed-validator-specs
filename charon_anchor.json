@@ -1,0 +1,118 @@
+{
+  "repo": "https://github.com/ObolNetwork/charon",
+  "branch": "main",
+  "commit": "6054bcb2dc9be9a2d4244564ffdd0f2d1b7a09fd",
+  "date": "2026-07-29",
+  "note": "The Charon commit this spec was last validated against. Keep the short form in sync with the version anchor section of README.md; tests/test_charon_anchor.py enforces that.",
+  "watch_paths": [
+    "app/peerinfo/",
+    "cluster/",
+    "core/",
+    "dkg/",
+    "p2p/"
+  ],
+  "ignore_paths": [
+    "core/aggsigdb/",
+    "core/deadline.go",
+    "core/deadline_test.go",
+    "core/dutydb/",
+    "core/mocks/",
+    "core/retry.go",
+    "core/tracing.go",
+    "core/tracker/",
+    "core/tracking.go"
+  ],
+  "ignore_note": "Internal, non-wire-visible components the spec deliberately does not cover: dutydb, aggsigdb, the deadliner, the tracker (observability) and retry/tracing plumbing. See 'Explicitly out of scope for the spec' in plans/spec-completion.md. Everything else under watch_paths is reported, so a new subsystem is flagged rather than silently missed.",
+  "protos": [
+    {
+      "spec": "proto/bcast.proto",
+      "charon": "dkg/dkgpb/v1/bcast.proto"
+    },
+    {
+      "spec": "proto/consensus.proto",
+      "charon": "core/corepb/v1/consensus.proto",
+      "not_mirrored": [
+        "SniffedConsensusInstance",
+        "SniffedConsensusInstances",
+        "SniffedConsensusMsg"
+      ],
+      "why_not_mirrored": "The consensus sniffer's on-disk debug format. Charon writes these to a file for offline analysis; they are never sent between peers, so they are not interop surface."
+    },
+    {
+      "spec": "proto/core.proto",
+      "charon": "core/corepb/v1/core.proto"
+    },
+    {
+      "spec": "proto/dkg_sync.proto",
+      "charon": "dkg/dkgpb/v1/sync.proto"
+    },
+    {
+      "spec": "proto/frost.proto",
+      "charon": "dkg/dkgpb/v1/frost.proto"
+    },
+    {
+      "spec": "proto/nodesigs.proto",
+      "charon": "dkg/dkgpb/v1/nodesigs.proto"
+    },
+    {
+      "spec": "proto/parsigex.proto",
+      "charon": "core/corepb/v1/parsigex.proto"
+    },
+    {
+      "spec": "proto/pedersen.proto",
+      "charon": "dkg/dkgpb/v1/pedersen.proto"
+    },
+    {
+      "spec": "proto/peerinfo.proto",
+      "charon": "app/peerinfo/peerinfopb/v1/peerinfo.proto"
+    },
+    {
+      "spec": "proto/priority.proto",
+      "charon": "core/corepb/v1/priority.proto"
+    }
+  ],
+  "protos_note": "Each spec proto and the Charon file it mirrors, compared field by field at the anchor commit by scripts/check_proto_parity.py. Messages Charon defines that the spec deliberately omits must be listed under not_mirrored with a reason; anything undeclared is a finding.",
+  "behaviours": [
+    {
+      "name": "MsgSync.nickname field (DKG sync)",
+      "first_charon_release": "v1.9.0",
+      "spec": "docs/dv-spec/dkg-sync.md"
+    },
+    {
+      "name": "Deterministic (genesis-derived) eager double linear round deadlines",
+      "first_charon_release": "v1.9.0",
+      "spec": "docs/dv-spec/consensus.md"
+    },
+    {
+      "name": "Linear round timer subsequent-round timeout fix",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/consensus.md",
+      "note": "No final Charon release carries this; it shipped in the v1.11.0 release candidates (first in v1.11.0-rc1). Timing-only, no wire change: against an older peer, its rounds 2+ simply time out on the uncorrected schedule."
+    },
+    {
+      "name": "QBFT DECIDED-resend rate limit and message size/count limits",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/consensus.md",
+      "note": "No final Charon release carries this; it shipped in the v1.11.0 release candidates (first in v1.11.0-rc1). The limits only reject messages no honest peer sends, so enforcing them interoperates with every release."
+    },
+    {
+      "name": "Preferred priority protocol ID /charon/priority/2.0.0",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/priority.md",
+      "note": "Unreleased on Charon main. The legacy no-slash ID is the only one every released Charon speaks and must still be served; Charon targets v1.12 for the preferred ID and v1.14 for removing the alias."
+    },
+    {
+      "name": "Stable sort of scored priorities",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/priority.md",
+      "note": "Unreleased on Charon main. Only changes results for a tie among thirteen or more priorities in a topic, which no released Charon produces."
+    },
+    {
+      "name": "Sender-bound share indices in the DKG lock-hash exchange",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/parsigex.md",
+      "note": "Unreleased on Charon main. Rejects only partial signatures no honest peer sends."
+    }
+  ],
+  "behaviours_note": "Specified behaviours that postdate Charon v1.7.1, the release Pluto pins. first_charon_release names the first final Charon release; it is null for behaviour no final release carries, whether it exists only on main or in release candidates — the entry's note says which. This is the machine-readable form of the compatibility table in README.md, and it is what release manifests carry so a consumer pinning a spec release can tell which parts apply to the Charon it runs against."
+}

@@ -36,7 +36,7 @@ All four protocols share one bootstrap, executed before any step runs:
 4. Determine the participant set — this is the only step that differs per protocol (see below).
 5. Reject duplicate peer IDs among participants.
 6. Start libp2p networking, keyed on the **current** lock's definition hash.
-7. Create the per-protocol components: the partial signature exchanger (`sigLock` only), the reliable broadcast component over the participant set, and the node signature broadcaster.
+7. Create the per-protocol components: the partial signature exchanger (`sigLock` only), the reliable broadcast component over the participant set, and the node signature broadcaster. The exchanger is constructed with each participant's assigned share index and rejects a participant that has none — see [sender binding](parsigex.md#sender-binding).
 8. Start the [DKG sync protocol](dkg-sync.md), signing the **current** definition hash. Compatibility is checked by implementation minor version.
 
 Two details are wire-visible and must match:
@@ -110,7 +110,7 @@ An override may therefore only **raise** the threshold. A lower one would let th
 
 **Share index compaction.** Removal is the one case where ceremony indices and new-lock indices differ:
 
-- *During* the ceremony, survivors keep their gapped current-lock indices. Dropping the first of four operators leaves survivors signing as 2, 3 and 4.
+- *During* the ceremony, survivors keep their gapped current-lock indices. Dropping the first of four operators leaves survivors signing as 2, 3 and 4. This is why the exchange's [sender binding](parsigex.md#sender-binding) resolves a peer's expected share index through a peer map instead of its position in the participant list — here they disagree for every survivor.
 - In the *new* lock, indices are compacted to `1..n'` in ascending current-lock order, so those same survivors become 1, 2 and 3.
 
 The compaction is not a choice: the lock stores public shares as an ordered **list**, so an operator's list position determines the index it is read back at. The reshare assigns the survivors' new shares in the same ascending order, so the two agree. Keying the new lock's public shares by the old, gapped indices produces a lock whose shares do not reconstruct the validator public key, and which every node rejects at load time.

@@ -1,19 +1,18 @@
 # Spec Completion Plan
 
-Status as of 2026-07-28. Goal: make this repo a formal spec of the Obol DV
+Status as of 2026-07-30. Goal: make this repo a formal spec of the Obol DV
 protocol (as implemented by charon) precise enough that pluto is assured of
 perfect interop with charon.
 
 Context anchors:
-- Spec validated against charon main @ `2eb6798e` (2026-07-14, during v1.11.0 RCs).
+- Spec validated against charon main @ `6054bcb2` (2026-07-29, during v1.11.0 RCs).
 - Pluto pins parity to charon **v1.7.1**, will come forward to charon main
   (and future versions) once complete to 1.7.1. Pluto does not consume this
   spec yet — its parity target is charon Go source (see pluto AGENTS.md).
-- Known normative quirk: priority protocol ID is `charon/priority/2.0.0`
-  (no leading slash) — accidental in charon, accommodated by pluto, now
-  documented in this spec. Do not "fix" unless charon versions the protocol.
-  (An unmerged charon branch `pinebit/fix-priority-slash` adds the slash with a
-  legacy alias; the spec stays on the no-slash form until that lands on main.)
+- Priority now has **two** protocol IDs: `/charon/priority/2.0.0` preferred and
+  `charon/priority/2.0.0` (no leading slash) as a legacy alias. Both must be
+  served — the legacy form is the only one any released charon speaks. See
+  Phase 1.1.
 
 ## Phase 1 — Un-stale (DONE, this PR)
 
@@ -22,7 +21,7 @@ Context anchors:
 - [x] Deterministic genesis/slot-derived deadlines + duty start delay in
       `DoubleEagerLinearRoundTimer` (charon #4243, in v1.9.0 — commit
       `31ff2996` is an ancestor of the v1.9.0 tag)
-- [x] QBFT hardening (charon #4557, in v1.11.0): DECIDED-resend rate limit
+- [x] QBFT hardening (charon #4557, in the v1.11.0 RCs): DECIDED-resend rate limit
       (16/source, strictly-increasing round), `MAX_CONSENSUS_MSG_SIZE` (32 MiB),
       `verify_msg_limits` (justifications ≤ 2n, values ≤ 2(j+1))
 - [x] Rename `subspecs/bcast` → `subspecs/reliable_bcast` (disambiguate from
@@ -32,6 +31,55 @@ Context anchors:
 - [x] Pluto mentions (README Implementations table, docs/index.md)
 - [ ] Deliberately skipped: cluster definition doc stays at v1.10 (per Oisín,
       v1.10 is the target for now; charon is on v1.11 — revisit later)
+
+## Phase 1.1 — Re-anchor to charon main (DONE, 2026-07-30)
+
+Charon moved eight commits past the `2eb6798e` anchor before anyone noticed, so
+this is the drift Phase 3.3 exists to catch automatically. Found by reading a
+local charon checkout, not by any alarm. Three commits touched spec surface, all
+unreleased (charon's latest tag is `v1.11.0-rc1`, which contains none of them):
+
+- [x] **Priority protocol ID** (charon #4605, `3335e6eb`) — the leading-slash fix
+      this plan said it was waiting on has landed. `/charon/priority/2.0.0` is now
+      preferred, `charon/priority/2.0.0` is a legacy alias, and **both must be
+      served**: a dialler offers both with the slash form first, a listener
+      registers each separately as an exact match. Registering them together
+      under a common prefix collapses that prefix to bare `*`, which libp2p
+      identify then advertises in place of either real ID — specified in
+      `priority.md` because it is an interop trap, not an implementation detail.
+      Charon targets `v1.12` for the preferred ID and `v1.14` for alias removal.
+- [x] **Stable priority sort** (charon #4611, `6054bcb2`) — charon now uses
+      `slices.SortStableFunc`, so the divergence risk this plan recorded is gone.
+      The spec was already correct; the warning became a statement.
+- [x] **ParSigEx sender binding** (charon #4599, `7bcc511e`) — the handler passes
+      the authenticated libp2p sender to the verifier. The DKG lock-hash exchange
+      enforces that a peer may only contribute under its own assigned share index
+      (`verify_peer_share_idx`); the core workflow deliberately does not, since
+      those signatures are already verified against the pubshare for the claimed
+      index. Expected indices resolve through a **peer map**, not peer position,
+      because removal leaves survivors with gapped indices — the case that breaks
+      a position-derived implementation. Construction rejects a participant with
+      no assigned index (`validate_exchange_peers`), because otherwise its
+      signatures are dropped as unknown and the exchange silently times out.
+
+Assessed and ruled **out of scope**: charon #4610 (`7c0354f1`) raises the
+deadliner window for `DutySyncMessage`/`DutySyncContribution` to a full slot.
+That is `core/deadline.go`, and the deadliner is on the out-of-scope list below.
+The remaining four commits are dependency bumps and a flaky-test fix.
+
+Test vector `provenance.charon_ref` fields were deliberately **not** advanced:
+that field records where a suite was generated, none of this drift changes an
+expected value, and moving it without re-running the Go generators would assert
+a verification that never happened.
+
+### Correction made while doing the above
+
+- `priority.md` claimed ties between equal-scoring priorities are broken "by
+  their SSZ hash (deterministic, but arbitrary)". Wrong, and interop-relevant:
+  charon breaks ties by **first-seen order over messages sorted by ascending peer
+  ID** (`calculate.go` `SortStableFunc`). The hash sort applies to *topics*, which
+  the same page already stated correctly one section earlier. An implementation
+  following the old text would order priorities differently from charon.
 
 ## Phase 2 — Close interop-critical gaps (DONE except item 7)
 
@@ -247,16 +295,181 @@ Also fixed in this pass:
      before use" sequence, and the vector pointers. `hashing.md` no longer claims
      every DV hash is over protobuf bytes.
 
-   Still outstanding:
-   - Publishing as versioned release artifacts, which depends on the versioning
-     policy under Aspirations.
+   Rejection vectors (DONE, 2026-07-30) — three suites, promoted out of
+   Aspirations. Every suite above passes by *producing a value*, which left the
+   reject rules unpinned: an implementation could pass all six while accepting a
+   128 MiB consensus message or a partial signature deposited into another
+   operator's share slot. Under-rejecting is a DoS hole, over-rejecting breaks
+   liveness against charon, and neither had a fixture.
+   - [x] `test_vectors/qbft_msg_limits.json` — the Phase 1 QBFT hardening as
+     accept/reject pairs either side of each boundary: justifications ≤ 2n,
+     values ≤ 2(j+1), 32 MiB wire size. Each case names *which* limit fired,
+     because charon checks justifications before values, so a message exceeding
+     both is rejected for its justifications; two implementations that reject the
+     same inputs for different reasons have not agreed on the protocol. The wire
+     size is pinned as a **narrowing** of charon's 128 MiB libp2p default
+     (`p2p/sender.go`), which consensus overrides — leaving the default in place
+     accepts messages four times the permitted size. `source: spec`, because
+     charon has no table test for `verifyMsgLimits`: the formulas are charon's,
+     the choice of boundaries is not.
+   - [x] `test_vectors/qbft_decided_resends.json` — charon's own
+     `TestDecidedRebroadcastLimits` event sequences, with the expected rebroadcast
+     decision per event rather than a total, so an implementation missing either
+     half of the rule (strictly-increasing round, or the 16-per-source cap) fails a
+     specific event. Counted as rebroadcast *events*, not messages, since the spec
+     returns one message per peer where charon calls `Broadcast` once — a total
+     would have encoded an implementation shape.
+   - [x] `test_vectors/parsigex_sender_binding.json` — charon's
+     `TestVerifyPeerShareIdx` table plus `TestNewExchangerRejectsIncompletePeerMap`.
+     The peer map assigns share index 4 to the *second* peer, which is the case
+     that separates a map-based implementation from a position-based one.
+
+   The generator replays every charon-transcribed case through the spec and fails
+   on disagreement, so these suites are charon's tables rather than the spec's
+   opinion of them. `tests/test_vectors.py` builds each input from the case's own
+   `input` object rather than sharing the generator's builders — a shared builder
+   would let a wrong count agree with itself — and asserts each suite still carries
+   both verdicts, since a suite that drifted to all-accept would pass every case
+   while testing nothing.
+
+   Versioned release artifacts (DONE, 2026-07-30) — the last piece of item 1, and
+   the keystone for item 2, which pins "a spec release" rather than a commit.
+
+   Decision (2026-07-30, Andrei): **spec semver plus a manifest**, not charon
+   MAJOR.MINOR as this plan originally sketched. The sketch cannot hold: the spec
+   tracks charon `main`, so it may specify behaviour no tagged charon carries — at
+   `6054bcb2` three do — and a tag named `spec-v1.11` would claim to describe a
+   charon that behaves differently. On that scheme no first release could be cut
+   today at all. Instead the spec versions itself and the manifest states which
+   charon it was validated against.
+
+   - [x] `docs/versioning.md` — the policy: what bumps MAJOR/MINOR/PATCH, what an
+     artifact contains, how a consumer reads the manifest, and how to cut a
+     release. A **correction bumps MINOR, not PATCH**: when the spec said `peer_id`
+     was field 2 of `PriorityMsg`, an implementation that followed it had to change
+     its wire output, and calling that a fix does not make it compatible.
+   - [x] `charon_anchor.json` gained `behaviours` — the machine-readable form of
+     README's compatibility table, with the first charon release per behaviour
+     (`null` for main-only). `tests/test_release.py` fails if the two disagree.
+   - [x] `scripts/build_release.py` + `.github/workflows/release.yml` — builds
+     `manifest.json` + `test_vectors/` + `proto/` (40 KiB tarball), attached to a
+     published GitHub release. Runs on `release: published` rather than tag push,
+     so a human decides a release happens and CI only builds what it ships, and it
+     **fails if the tag and `pyproject.toml` disagree** — otherwise a release could
+     ship a manifest naming a different version than the tag a consumer pinned.
+     Docs are deliberately not in the artifact: a Go or Rust test cannot assert
+     against Markdown.
+   - [x] `pyproject.toml` version 0.0.1 → 0.1.0. **No tag was cut and nothing was
+     published** — that is outward-facing and left to a human.
+
+   Found by consuming the built artifact rather than by reading it: **charon's tags
+   do not order lexically**, so `"v1.11.0" > "v1.9.0"` is false and a consumer
+   filtering behaviours by string comparison silently concludes that v1.11.0
+   behaviour is present on a v1.9.0 charon. The manifest therefore ships
+   `first_charon_release_semver` as a `[major, minor, patch]` triple alongside the
+   tag, and the policy page says to compare with it. Verified by walking the ladder
+   against the extracted tarball: 7 behaviours absent on v1.7.1 (pluto's pin), 5 on
+   v1.9.0. (The branch review then caught that `v1.11.0` names no existing release —
+   only `v1.11.0-rc1` exists — so the timer fix and QBFT limits were moved to
+   `first_charon_release: null` with notes naming the RC.)
 
 2. **Consumer suites**: Go test package in charon + Rust test crate in pluto
    loading vectors from a pinned spec release. Catches charon regressions
    against its own documented protocol, not just pluto divergence.
-3. **Spec-conformance CI here**: checkout charon@pinned + pluto@pinned, run
-   both vector suites; scheduled weekly run against charon@main as the
-   staleness alarm.
+
+   - [x] **Charon (Go), written and verified 2026-07-30.** In `consumers/go/`,
+     laid out mirroring charon's tree so placing it is `rsync -a consumers/go/
+     ~/charon/`. All nine suites, **314 subtests**, run green against a charon
+     worktree at the anchor `6054bcb2`. Not a PR yet — this repo cannot merge into
+     charon, so `consumers/README.md` documents placement and the pinning rules.
+   - [ ] **Pluto (Rust)** — not started. Pluto's crate layout mirrors charon's
+     (`crates/{cluster,consensus,priority,parsigex,crypto,k1util,...}`), and it
+     already carries `crates/consensus/testdata/vectors/hashproto.json`, which
+     `qbft_hashing.json` is meant to replace.
+
+   Correction to the plan's wording: it cannot be "a Go test package". Almost
+   everything the vectors cover is unexported in charon — `hashProto`,
+   `verifyMsgLimits`, `verifyPeerShareIdx`, `calculateResult`, the round-timer
+   helpers, and the decided-resend limiter (a closure inside `Run`) — so an
+   external package physically cannot reach them. The suite is one importable
+   loader plus five in-package test files. `specvectors.CoveredSuites` records
+   which file runs which suite, and `TestEverySuiteIsCovered` fails when a release
+   ships a suite nothing runs; `tests/test_consumers.py` enforces the same
+   mapping from this side, since the Go code is not compiled here.
+
+   Found while writing it: **charon has two `hashProto` functions with different
+   `Any` semantics.** `core/priority` hashes the `Any` wrapper itself, type URL
+   included; `core/consensus/qbft` rejects an `Any` outright and its callers
+   unwrap first, so the hash covers the inner message. The `any_string` vectors
+   only round-trip through the priority one. The spec was right in both places —
+   `encode_any_string` documents the type URL being inside the priority hash, and
+   `hash_value` hashes the inner encoding for consensus — but the *contrast* was
+   documented nowhere, and an implementation with one Any-hashing convention
+   diverges on one side or the other.
+
+   Verified by mutating charon rather than by asserting: `maxDecidedResends`
+   16→15 fails `resend_cap_per_source`; the consensus wire limit 32→128 MiB fails
+   `one_byte_over_limit` and `p2p_default_read_limit`; making priority's
+   `hashProto` unwrap `Any` fails all four `any_string` cases.
+
+   One coverage gap the mutation testing exposed, deliberately left open: moving
+   priority's Any-hashing to the *call site* in `calculate.go` (unwrap there,
+   leave `hashProto` alone) is **not** caught. The scoring vectors look topics up
+   by name and no case pins the hash-derived *topic ordering*, so the convention
+   is pinned for the function but not for its use. Closing it needs a vector that
+   asserts topic order for two or more topics.
+3. **Spec-conformance CI here** — split, because the two halves have different
+   blockers:
+   - [x] **Staleness alarm (DONE, 2026-07-30).** `charon_anchor.json` holds the
+     pinned commit and the watched/ignored path sets in machine-readable form;
+     `scripts/check_charon_drift.py` lists charon commits between the anchor and
+     `main` that touch spec surface, exiting non-zero when any do;
+     `.github/workflows/charon-staleness.yml` runs it weekly (Mondays 07:00 UTC)
+     plus on demand. Not run on pull requests: charon drifting is not a reason to
+     block an unrelated PR.
+
+     Paths are watched **broadly** — whole directories, minus only the components
+     listed under "Explicitly out of scope" below — so a charon subsystem nobody
+     has considered gets reported rather than silently missed. Dependency bumps
+     fall outside the watched roots and never fire. Test-only commits are
+     reported but sorted last, since charon's tests are where the accept/reject
+     tables this spec mirrors live, but they rarely move the wire.
+
+     Verified by replay, not by assertion: run against the previous anchor
+     `2eb6798e` it reproduces the Phase 1.1 findings exactly — the same three
+     substantive commits ranked first, `adddef75` demoted to test-only,
+     `7c0354f1` excluded as deadliner, and the three dependency bumps not matched
+     at all. `tests/test_charon_anchor.py` pins the path-matching behaviour and
+     fails if `charon_anchor.json` and the README anchor disagree, which would
+     otherwise leave the check measuring drift from the wrong commit and still
+     passing. The check is deliberately outside `tox`, since it needs the network.
+   - [x] **Proto parity (DONE, 2026-07-30).** Promoted out of Aspirations, because
+     `proto/` was the one part of the spec with no guardrail at all: nothing here
+     compiles or executes it (the encoders in `encoding/` carry their own explicit
+     field numbers), so a divergence was invisible to all 762 tests.
+     `scripts/check_proto_parity.py` compares each file in `proto/` against the
+     Charon file it mirrors — declared per file in `charon_anchor.json` — field by
+     field: numbers, names, types, `repeated`/`optional` labels, `reserved` sets
+     and the package. `.github/workflows/proto-parity.yml` runs it on any change
+     to `proto/`, the mapping or the script.
+
+     Not `buf breaking`, as originally sketched. `buf` diffs two revisions of one
+     schema, but `proto/` is deliberately a *subset* of Charon's with different
+     file paths and no `go_package`, so every legitimate omission would report as
+     a breaking change. Omissions are instead declared with a reason and checked
+     both ways: an undeclared one fails, and so does a declaration Charon has
+     outgrown.
+
+     Compares against the **anchor**, not `main`, so the result changes only when
+     this repo does — that is what makes it safe on a pull request, where the
+     staleness alarm would be noise. `scripts/charon_repo.py` now holds the anchor
+     loader and git plumbing both checks share, so they cannot disagree about
+     which commit the anchor is.
+   - [ ] **Vector conformance against pinned checkouts**: checkout charon@pinned +
+     pluto@pinned and run both vector suites. The charon half is now runnable —
+     `consumers/go/` exists and passes — but running it from CI here means
+     checking out charon, vendoring the artifact and invoking `go test`, which
+     needs a Go toolchain in this repo's CI. Still blocked on item 2 for pluto.
 4. **Wire-level harness**: extend pluto's mixed docker-compose/dkg-runner
    infra; spec Python as passive protocol oracle (decode captured protobuf,
    validate QBFT transcripts against `protocol.py`).
@@ -274,14 +487,38 @@ by reading it:
   singular fields: an `UnsignedDataSet` entry with an empty value emits `0x1200`.
 - **An encoding of ≤32 bytes is not hashed at all** — `hash_proto` returns it
   zero-padded. `Duty{slot: 1, type: 2}` "hashes" to `0x0801100200…00`.
-- Charon's priority result ordering documents a tie-break by lowest peer ID, but
-  implements it with Go's `slices.SortFunc`, which is **not stable**. It holds
+- Charon's priority result ordering documented a tie-break by lowest peer ID but
+  implemented it with Go's `slices.SortFunc`, which is **not stable**. It held
   only because Go's pdqsort falls back to insertion sort below 13 elements. The
-  spec sorts stably and documents the divergence risk.
+  spec sorted stably and documented the divergence risk. **Resolved upstream** by
+  charon #4611 (`6054bcb2`), which switched to `slices.SortStableFunc`; see
+  Phase 1.1.
 - The duty start delay is **integer division at nanosecond resolution**
   (`time.Duration`), so a 5s slot (Gnosis Chain) gives an attester delay of
   1666666666ns. The spec's float helper was silently 0.33ns off; there is now an
   integer-nanosecond API and the vectors are normative in integers.
+
+From the proto parity pass (2026-07-30), all found by the new check on its first
+run against charon `6054bcb2`:
+
+- **`PriorityMsg` had `peer_id` and `topics` transposed** — the spec numbered them
+  2 and 3, charon numbers them 3 and 2. Interop-fatal, and silent: both types are
+  length-delimited, so a decoder does not error, it mis-parses. Worse, the message
+  is signed over its own encoding, so an implementation following `proto/` would
+  produce a signing root no peer can reproduce and *every* priority signature
+  would fail. Nothing else in the repo caught it because no Python code encodes
+  `PriorityMsg` — the field numbers only ever existed in the `.proto` file.
+- **Seven of ten spec protos declared no `package`.** Not cosmetic: the package is
+  part of the `Any` type URL, and priority and consensus both wrap payloads in
+  `Any`. It also meant `core.corepb.v1.Duty`, referenced by three files, resolved
+  to nothing.
+- `bcast.proto` used `google.protobuf.Any` without importing it, so `proto/` was
+  not compilable as it stood. The check now verifies imports and type resolution
+  on the spec side alone, which needs no charon and so runs in `pytest`.
+- `NodePubKeyMessage.shares` is `optional` in charon. For a message field that is
+  presence semantics the wire already has, so this one was harmless — recorded
+  because "harmless" was a conclusion the check forced someone to reach
+  deliberately rather than an assumption.
 
 From the cluster hashing pass:
 
@@ -339,20 +576,13 @@ against charon — 57 hand-built edge cases, 400 randomized definitions, three
 
 ## Aspirations (agreed, later)
 
-- **Adversarial/negative vectors**: oversized justification → reject,
-  decided-resend flood → rate-limit; doubles as security regression tests.
 - **Differential fuzzing**: random QBFT message sequences into spec-Python,
   charon-Go, pluto-Rust state machines; compare outputs.
 - **Pluto link-back**: one-line PR to pluto README/AGENTS.md referencing this
   spec once Phase 1 lands ("read the spec; Go source is the reference impl").
-- **Versioning policy**: tagged spec releases (`spec-v1.7.1`, `spec-v1.8.x`)
-  mapped to charon MAJOR.MINOR so pluto's version-forward path has an
-  artifact trail.
-- **Proto parity CI**: buf breaking-change diff of `proto/` against charon's
-  `core/corepb`/`dkg/dkgpb` at the pinned commit (would have caught the
-  missing `nickname` field automatically).
-- Quirks registry doc: deferred until we accumulate more than the priority
-  slash + dkg-sync trailing slash.
+- Quirks registry doc: still deferred, and now thinner — the priority slash was
+  fixed upstream (Phase 1.1), leaving the dkg-sync trailing slash and the
+  priority legacy alias, which is scheduled for removal in charon `v1.14`.
 
 ## Explicitly out of scope for the spec
 

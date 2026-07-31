@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package core.corepb.v1;
+
 import "core.proto";
 
 message ParSigExMsg {

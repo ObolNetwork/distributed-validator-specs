@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package core.corepb.v1;
+
 message Duty {    // core.Duty
   uint64 slot = 1; // uint64
   int32 type = 2; // core.DutyType

@@ -71,7 +71,7 @@ Upon receiving a `ParSigExMsg`:
 
 3. **Convert from protobuf**: Transform `ParSignedDataSet` from wire format to internal representation
 
-4. **Verify each partial signature**:
+4. **Verify each partial signature**, passing the **authenticated libp2p sender** to the verifier along with the duty, pubkey and data:
 
    - For each (pubkey, ParSignedData) pair in the set:
      - Look up the public share for this validator and share index
@@ -79,6 +79,46 @@ Upon receiving a `ParSigExMsg`:
      - Verify the signature using Ethereum consensus layer signing rules
 
 5. **Invoke subscribers**: If all signatures verify, call all registered subscriber callbacks with the duty and partial signature set
+
+The verifier is supplied at construction time, and the two callers verify
+differently — see [Sender binding](#sender-binding). The handler must pass the
+sender regardless of which verifier is installed.
+
+## Sender binding
+
+The DKG lock-hash exchange binds every received partial signature to its
+authenticated sender: **a peer may only contribute partial signatures under its
+own assigned share index**, so it cannot deposit a signature into another
+operator's slot. This is the same check the node signature exchange applies to
+claimed peer indices ([`verify_node_sig_msg`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/dkg/node_sigs.py)),
+expressed over share indices — see [`verify_peer_share_idx`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/subspecs/parsigex/helpers.py).
+
+The expected index comes from a **peer ID to assigned share index map**, not from
+the sender's position in the peer list. Those differ: after operators are removed
+the remaining ones keep their original share indices, so the assignment is no
+longer contiguous (see [share index compaction](dkg-cluster-edits.md#remove-operators)).
+An implementation that computed the expected index as *peer position + 1* would
+reject valid signatures on any cluster that has had an operator removed.
+
+Whether the binding applies depends on the caller, and the asymmetry is
+deliberate:
+
+| Caller | Binds to sender? | Why |
+| ------ | ---------------- | --- |
+| DKG lock-hash exchange | Yes | Signing roots are not known while the exchange runs, so cryptographic verification is deferred until aggregation. The authenticated sender is the only thing a receiver can check at reception time. |
+| Core workflow (duties) | No | Partial signatures are already verified against the public share for the claimed share index, which binds them to a share cryptographically. A receiver that enforced the sender binding here would reject partial signatures Charon accepts. |
+
+A participating peer with no valid assigned share index is a configuration
+error, and it must be rejected when the exchange is constructed rather than at
+reception. Such a peer's partial signatures are rejected as coming from an
+unknown peer, which does not surface as a validation failure — the exchange
+simply never reaches its threshold and times out.
+
+[`test_vectors/parsigex_sender_binding.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/parsigex_sender_binding.json)
+carries charon's own accept/reject table for both checks. Its peer map assigns
+share index 4 to the *second* peer, which is the case that separates a
+map-based implementation from a position-based one: a position-derived
+expectation of 2 accepts what charon rejects and rejects what it accepts.
 
 ## Verification
 
@@ -114,12 +154,13 @@ Note: `DutyExit` and `DutyBuilderRegistration` never expire (handled in Deadline
 - **Idempotent**: Receiving the same partial signature multiple times is harmless (deduplicated in ParSigDB)
 - **Best-effort delivery**: Uses libp2p direct streams with timeouts; retries are not automatic
 - **Signature verification**: All received partial signatures are verified before acceptance
-- **No equivocation protection**: ParSigEx itself does not prevent a node from sending different signatures for the same duty to different peers
+- **Sender-bound share indices in DKG**: In the DKG lock-hash exchange a peer may only contribute under its own assigned share index (see [Sender binding](#sender-binding)); the core workflow relies on public-share verification instead
+- **No equivocation protection**: ParSigEx itself does not prevent a node from sending different signatures for the same duty to different peers. Sender binding constrains *which share index* a peer may sign under, not how many different values it may send under that index
 
 ## Interop notes
 
 - **Protocol versioning**: The protocol ID `/charon/parsigex/2.0.0` identifies the version; future versions may use different IDs
-- **Peer ordering**: Share indices and peer indices must be consistent across all nodes (typically derived from cluster lock operator order)
+- **Peer ordering**: Share indices and peer indices must be consistent across all nodes (typically derived from cluster lock operator order). They are not interchangeable: a share index assignment can be non-contiguous after operator removal, so the DKG exchange's sender binding resolves the expected index through a peer map rather than by peer position
 - **Public key encoding**: Validator public keys are BLS12-381 public keys encoded as 48-byte compressed G1 points
 - **Signature encoding**: BLS signatures are 96-byte compressed G2 points
 - **Message ordering**: No guaranteed ordering of messages; ParSigDB handles deduplication and threshold detection

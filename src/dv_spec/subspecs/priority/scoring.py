@@ -111,11 +111,11 @@ def calculate_result(msgs: Sequence[PriorityMsg], min_required: int) -> Priority
 
     Ties are broken by the peer that proposed the priority first, in ascending
     peer ID order — which is why the messages are sorted by peer ID up front and
-    why the sort by score MUST be stable. Charon documents this same tie-break
-    but implements it with Go's `slices.SortFunc`, which is not a stable sort;
-    it holds in practice only because Go's pdqsort falls back to insertion sort
-    below thirteen elements. Implementations should sort stably rather than rely
-    on that.
+    why the sort by score MUST be stable. Charon sorts stably as of `6054bcb2`.
+    Releases up to and including `v1.11.0-rc1` used Go's `slices.SortFunc`, which
+    is not stable, and agreed with this only because Go's pdqsort falls back to
+    insertion sort below thirteen elements — true for any realistic number of
+    priorities in a topic, but not something to rely on.
 
     Args:
         msgs: One message per participating peer.

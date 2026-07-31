@@ -13,7 +13,9 @@ from .helpers import (
     extract_pubkeys,
     is_duty_always_accepted,
     make_simple_gater,
+    validate_exchange_peers,
     validate_share_indices,
+    verify_peer_share_idx,
 )
 from .message import (
     ParSigExMsg,
@@ -32,5 +34,7 @@ __all__ = [
     "extract_pubkeys",
     "is_duty_always_accepted",
     "make_simple_gater",
+    "validate_exchange_peers",
     "validate_share_indices",
+    "verify_peer_share_idx",
 ]

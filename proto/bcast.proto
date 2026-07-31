@@ -1,5 +1,9 @@
 syntax = "proto3";
 
+package dkg.dkgpb.v1;
+
+import "google/protobuf/any.proto";
+
 message BCastSigRequest {
   reserved 2;
   string id   = 1;

@@ -98,6 +98,9 @@ uv run tox
 | Fix lint errors                        | `uv run ruff check --fix src tests scripts` |
 | Type check                             | `uv run mypy src tests scripts`     |
 | Regenerate test vectors                | `uv run python scripts/generate_test_vectors.py` |
+| Check for Charon drift past the anchor | `uv run python scripts/check_charon_drift.py` |
+| Check `proto/` parity with Charon at the anchor | `uv run python scripts/check_proto_parity.py` |
+| Build a release artifact (manifest + vectors + protos) | `uv run python scripts/build_release.py --archive` |
 | Build docs                             | `uv run mkdocs build`               |
 | Serve docs                             | `uv run mkdocs serve`               |
 | Run all quality checks (no tests/docs) | `uv run tox -e all-checks`          |

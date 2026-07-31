@@ -8,11 +8,9 @@ validator nodes.
 from dv_spec.types.duty import Duty, DutyType
 
 from .helpers import (
-    MAX_PRIORITIES,
+    LEGACY_PROTOCOL_ID,
     PROTOCOL_ID,
-    calculate_priority_score,
-    calculate_result,
-    validate_messages,
+    PROTOCOLS,
 )
 from .message import (
     PriorityMsg,
@@ -20,6 +18,11 @@ from .message import (
     PriorityScoredResult,
     PriorityTopicProposal,
     PriorityTopicResult,
+)
+from .scoring import (
+    MAX_PRIORITIES,
+    calculate_result,
+    validate_msgs,
 )
 
 __all__ = [
@@ -31,8 +34,9 @@ __all__ = [
     "PriorityTopicResult",
     "PriorityScoredResult",
     "PROTOCOL_ID",
+    "LEGACY_PROTOCOL_ID",
+    "PROTOCOLS",
     "MAX_PRIORITIES",
-    "calculate_priority_score",
     "calculate_result",
-    "validate_messages",
+    "validate_msgs",
 ]

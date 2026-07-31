@@ -14,7 +14,9 @@ from dv_spec.subspecs.parsigex import (
     extract_pubkeys,
     is_duty_always_accepted,
     make_simple_gater,
+    validate_exchange_peers,
     validate_share_indices,
+    verify_peer_share_idx,
 )
 
 
@@ -168,6 +170,83 @@ def test_validate_share_indices() -> None:
 
     assert validate_share_indices(invalid_set, (1, 3)) is False
     assert validate_share_indices(invalid_set, (1, 4)) is True
+
+
+# A non-contiguous layout: "other" keeps share index 4 after the operators that
+# held indices 2 and 3 were removed. This is the case that separates a peer map
+# from an assumption that share_idx == peer position + 1.
+SELF_PEER = "peer-self"
+OTHER_PEER = "peer-other"
+SHARE_IDX_BY_PEER = {SELF_PEER: 1, OTHER_PEER: 4}
+
+
+def partial_sig(share_idx: int) -> ParSignedData:
+    return ParSignedData(data=b"lockhash", signature=b"y" * 96, share_idx=share_idx)
+
+
+@pytest.mark.parametrize(
+    ("sender", "share_idx"),
+    [
+        pytest.param(SELF_PEER, 1, id="own share index accepted"),
+        pytest.param(OTHER_PEER, 4, id="assigned non-contiguous share index accepted"),
+    ],
+)
+def test_verify_peer_share_idx_accepts_assigned_index(sender: str, share_idx: int) -> None:
+    verify_peer_share_idx(SHARE_IDX_BY_PEER, sender, partial_sig(share_idx))
+
+
+@pytest.mark.parametrize(
+    ("sender", "share_idx", "message"),
+    [
+        pytest.param(OTHER_PEER, 2, "does not match", id="mismatched share index rejected"),
+        pytest.param(SELF_PEER, 4, "does not match", id="another peer's share index rejected"),
+        pytest.param("peer-unknown", 1, "unknown peer", id="unknown sender rejected"),
+    ],
+)
+def test_verify_peer_share_idx_rejects(sender: str, share_idx: int, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        verify_peer_share_idx(SHARE_IDX_BY_PEER, sender, partial_sig(share_idx))
+
+
+def test_par_signed_data_rejects_non_positive_share_idx_at_parse() -> None:
+    """A non-positive share index cannot be parsed, so it never reaches the binding.
+
+    Charon has no such constraint on the type and rejects the index inside the
+    binding check instead. Both refuse the same input; the spec refuses it sooner.
+    """
+    with pytest.raises(ValidationError):
+        partial_sig(0)
+
+
+@pytest.mark.parametrize("share_idx", [0, -1])
+def test_verify_peer_share_idx_rejects_non_positive_index(share_idx: int) -> None:
+    """The binding still rejects a non-positive index it was handed unvalidated.
+
+    Constructed without validation on purpose: this is the check that stands in
+    for Charon's, for a caller that did not go through the model.
+    """
+    unvalidated = ParSignedData.model_construct(
+        data=b"lockhash", signature=b"y" * 96, share_idx=share_idx
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        verify_peer_share_idx(SHARE_IDX_BY_PEER, SELF_PEER, unvalidated)
+
+
+def test_validate_exchange_peers_accepts_non_contiguous_indices() -> None:
+    validate_exchange_peers([SELF_PEER, OTHER_PEER], SHARE_IDX_BY_PEER, peer_idx=0)
+
+
+def test_validate_exchange_peers_rejects_incomplete_map() -> None:
+    """A peer missing from the map would otherwise time the exchange out."""
+    with pytest.raises(ValueError, match="missing valid share index"):
+        validate_exchange_peers([SELF_PEER, OTHER_PEER], {SELF_PEER: 1}, peer_idx=0)
+
+
+@pytest.mark.parametrize("peer_idx", [-1, 2])
+def test_validate_exchange_peers_rejects_out_of_range_peer_idx(peer_idx: int) -> None:
+    with pytest.raises(ValueError, match="peer index out of range"):
+        validate_exchange_peers([SELF_PEER, OTHER_PEER], SHARE_IDX_BY_PEER, peer_idx=peer_idx)
 
 
 def test_duty_type_values() -> None:
