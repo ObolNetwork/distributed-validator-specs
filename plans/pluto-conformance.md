@@ -72,7 +72,7 @@ pluto commit actually tested. Statuses: `todo` / `in progress` / `done`.
 | 3 | BLS threshold aggregation | `bls_threshold` | done | PASS | All 5 groups PASS: `keys` (2/2), `partials` (4/4, pubshare + partial signature), `threshold_aggregates` (4/4 distinct 3-of-4 quorums, each reproducing the one `group_signature_hex`), `recovery` (1/1, `recover_secret` yields the exact `group_secret_hex`), `plain_aggregate` (1/1, matches the pinned bytes and does **not** verify under `group_pubkey_hex`, confirming plain aggregation is not a threshold-signature substitute). `group_signature_hex` also verifies under `group_pubkey_hex`. `pluto-crypto`'s `BlstImpl`/`Tbls` API matched the brief's guesses exactly; no divergence found. |
 | 4 | Cluster hashes + lock verification | `cluster_hashing` | done | FAIL (2 pinned known-divergence cases; at least 3 distinct affected fields — a lower bound, not a total) | `definition` 5/6 strict-PASS (`config_hash` and `definition_hash` both match on 5 cases, including the unsigned/signed pair proving config_hash is signature-independent); `all_empty_lists` is a real divergence, pinned (see Findings) — it carries **at least two independent parse blockers** (`operators`/`validators` null-rejection, then a masked `timestamp` missing-field rejection once the first is hypothetically fixed), so a partial upstream fix will not make it pass. `lock` 3/4 strict-PASS (`lock_hash` matches and `verify_hashes` succeeds on 3); `validator_without_deposit_data` is a second real divergence, pinned (see Findings). `real_keys_3_of_4`: hashes verify; the full `verify_signatures(&EthClient::new(""))` chain is asserted to fail specifically at the definition EIP-712 stage (`LockError::DefinitionSignaturesVerificationFailed`) because its operator/creator signatures are unavoidable placeholders (charon's EIP-712 signing helpers aren't exported for vector generation) — `Lock::verify_signatures` short-circuits there, so its private BLS-aggregate and node-signature checks are never reached from this external crate; that half is a coverage gap (not a failure), noted in the test's doc comment rather than mocked around. |
 | 5 | Priority scoring | `priority_scoring` | done | PASS | All 18/18 cases PASS end-to-end through the public `Prioritiser` API over an in-process libp2p (`MemoryTransport` + noise + yamux) network, with a mock `Consensus` capturing the proposed `PriorityResult` (`calculate_result` itself is `pub(crate)`, unreachable directly). Covers below-quorum rejection (empty-result pins), single-priority and two-priority scoring, count-then-relative-priority ordering, and the two `test-case`-name-only "deterministic ordering" cases (score ties resolved by first-seen order in peer-id-sorted input — confirmed stable, no divergence from Charon v1.7.1's own stable-sort assumption). Peer `PeerId`s are generated then sorted ascending and mapped onto the vector's peer indices, since scoring tie-breaks are first-seen over peer-id-sorted input. Also pins `PROTOCOL_ID`/`protocols()` to the legacy slash-less `charon/priority/2.0.0` (ladder: preferred slash form is unreleased). Full 18-case suite runs in under 1s (well under the 2-minute budget). |
-| 6 | Round timer deadlines | `timer_deadlines` | done | round_timeout: PASS; deadline: ABSENT-OK; duty_start_delay: UNREACHABLE | All 216/216 cases PASS on `round_timeout_nanos`: a fresh `EagerDoubleLinearRoundTimer` per case (via `get_round_timer_func` with `EagerDoubleLinear` Stable-default and `ProposalTimeout` explicitly enabled, `Linear` left off) reproduces every round-1/2/3/10 timeout across all 6 duty types and all 3 slot durations, awaited under `#[tokio::test(start_paused = true)]` with `tokio::time::advance` (the future does not resolve on its own under a paused clock — confirmed against pluto's own `assert_fires_after` test helper before writing assertions). `deadline_nanos` is ABSENT-OK: confirmed by full-file reading of `timer.rs` that no timer consumes genesis time, slot duration, or slot number — the stored `Duty` is read only via `is_proposer` for the round-1 proposer override — matching ladder entry "Deterministic (genesis-derived) eager double linear round deadlines" (`first_charon_release: v1.9.0` > pluto's v1.7.1 anchor); nothing is asserted for this column since pluto computes no absolute deadline to pin. `duty_start_delay_nanos` is UNREACHABLE: `delay_slot_offset` (`crates/core/src/scheduler.rs`) is a non-`pub` `async fn` with no external caller, confirmed still private. No divergence found on the tested column, so no new Findings entry. |
+| 6 | Round timer deadlines | `timer_deadlines` | done | round_timeout: PASS **only under `ProposalTimeout` enabled**, a documented non-default precondition (pluto's *default* config has a pinned, real divergence on `PROPOSER`/round-1 cases — see Notes and Findings); deadline: ABSENT-OK, with a real code-level slot-invariance pin (not just a comment); duty_start_delay: UNREACHABLE | `round_timeouts_with_proposal_timeout_enabled`: 216/216 PASS, but only with `Feature::ProposalTimeout` explicitly enabled (it is `Status::Alpha`, off under pluto's `Config::default()`). `round_timeouts_pluto_default_feature_set` runs the same 216 cases under pluto's actual default `FeatureSet` and pins the resulting divergence: the 207 non-`PROPOSER`-round-1 cases still match the vectors, but all 9 `PROPOSER`/round-1 cases (3 slots x 3 slot durations) diverge — pluto's default gives 1s, the vectors (which assume `ProposalTimeout` enabled) expect 1.5s. This is a real, pinned known-divergence (see Findings), not swept under the enabled-feature test's PASS. `deadline_nanos`: `round_timeout_is_duty_slot_invariant` builds two timers per (duty_type, round) combination (24 total, covering all cases) differing only in `slot` (0 vs. 7231) and asserts bit-identical measured timeouts — a real code pin for "no timer reads slot", not a doc comment, so it fails loudly if `with_duty`/`RoundTimer::timer` ever grows slot-dependence; genesis-invariance is structurally guaranteed (the API has no genesis parameter at all) and is stated as such rather than tested. Matches ladder entry "Deterministic (genesis-derived) eager double linear round deadlines" (`first_charon_release: v1.9.0` > pluto's v1.7.1 anchor). `duty_start_delay_nanos` is UNREACHABLE: `delay_slot_offset` (`crates/core/src/scheduler.rs`) is a non-`pub` `async fn` with no external caller, confirmed still private. |
 | 7 | QBFT message limits | `qbft_msg_limits` | todo | — | |
 | 8 | DECIDED-resend limiting | `qbft_decided_resends` | todo | — | |
 | 9 | Sender binding + peer map | `parsigex_sender_binding` | todo | — | |
@@ -183,6 +183,38 @@ whether a ladder entry covers it, and whether it was reported upstream._
   pinned test, since it is unreachable while the first blocker stands and a test
   that cannot run is worse than a documented gap. Not reported upstream
   to pluto yet.
+
+- **Pluto's default feature configuration gives a proposer round-1 timeout of 1s,
+  not the vectors' 1.5s (pinned known-divergence, task 6,
+  `timer_deadlines/round_timeouts_pluto_default_feature_set`).** Pluto's
+  `Config::default()` has `min_status: Status::Stable` and
+  `Feature::ProposalTimeout` is `Status::Alpha` (`crates/featureset/src/lib.rs`),
+  so it is disabled under pluto's own default — confirmed deliberate by pluto's
+  own `default_matches_go_implementation` test. Charon at the vectors' anchor
+  (`6054bcb2`) has `ProposalTimeout` at `statusStable` with a `statusStable`
+  minimum (`app/featureset/featureset.go`), i.e. enabled by default: it was
+  promoted from alpha in charon commit `06b6371b` ("promote proposal_timeout
+  feature flag to stable", #4296), first released in **v1.9.0**, after pluto's
+  v1.7.1 parity anchor. So this is the same class of gap as the `deadline_nanos`
+  ABSENT-OK column (a v1.9.0 charon behaviour pluto's v1.7.1 pin predates), not a
+  bug — but it means the suite's headline `round_timeout_nanos` PASS holds only
+  under a non-default `FeatureSet` (`ProposalTimeout` explicitly enabled), which
+  the task now tests and documents as an explicit precondition rather than
+  presenting as an unqualified default-config PASS. Not reported upstream to
+  pluto (this is pluto correctly tracking its own v1.7.1 anchor, not a defect).
+
+- **Recommendation for this repo (not pluto): `charon_anchor.json`'s `behaviours`
+  ladder has no entry for the proposal-timeout feature-flag stabilization
+  (task 6).** The promotion of `ProposalTimeout` from alpha to stable-by-default
+  in charon v1.9.0 (`06b6371b`, #4296) is exactly the kind of postdating-v1.7.1
+  behaviour change the ladder exists to track, and the `timer_deadlines` vectors
+  already depend on it (they assume `ProposalTimeout` enabled), but no ladder
+  entry names it — unlike the sibling "Deterministic (genesis-derived) eager
+  double linear round deadlines" entry, which does. Adding an entry is a
+  separate, self-contained change to this repo's release surface: `README`'s
+  compatibility table documents the ladder and is enforced by
+  `tests/test_release.py`, so the entry and the README update need to land
+  together, in their own commit — not folded into this conformance task.
 
 ## Global Constraints
 
