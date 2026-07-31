@@ -17,24 +17,26 @@ fn secp256k1_signatures() {
         match pluto_k1util::sign(&secret, &hash) {
             Ok(sig) if sig.to_vec() == want_sig => {}
             Ok(sig) => failures.push(format!(
-                "{name}: sign gave {}, want {}",
+                "secp256k1_signatures/{name}: sign gave {}, want {}",
                 hex::encode(sig),
                 hex::encode(&want_sig)
             )),
-            Err(e) => failures.push(format!("{name}: sign failed: {e}")),
+            Err(e) => failures.push(format!("secp256k1_signatures/{name}: sign failed: {e}")),
         }
         match pluto_k1util::recover(&hash, &want_sig) {
             Ok(rec) if rec.to_sec1_bytes().to_vec() == want_pub => {}
             Ok(rec) => failures.push(format!(
-                "{name}: recover gave {}, want {}",
+                "secp256k1_signatures/{name}: recover gave {}, want {}",
                 hex::encode(rec.to_sec1_bytes()),
                 hex::encode(&want_pub)
             )),
-            Err(e) => failures.push(format!("{name}: recover failed: {e}")),
+            Err(e) => failures.push(format!("secp256k1_signatures/{name}: recover failed: {e}")),
         }
         match pluto_k1util::verify_65(&pubkey, &hash, &want_sig) {
             Ok(true) => {}
-            other => failures.push(format!("{name}: verify_65 gave {other:?}, want Ok(true)")),
+            other => failures.push(format!(
+                "secp256k1_signatures/{name}: verify_65 gave {other:?}, want Ok(true)"
+            )),
         }
     }
     assert!(
