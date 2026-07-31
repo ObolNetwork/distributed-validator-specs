@@ -100,9 +100,13 @@ fn unsigned_data_set_hashing() {
         12,
         "expected 12 unsigned_data_set cases"
     );
-    // If a third case starts diverging, or one of the known two stops
-    // diverging, this must fail loudly rather than silently skip a new red
-    // case or silently leave a fixed one excluded from the strict check.
+    // This checks only that the vector still contains cases named exactly
+    // these two strings, so a renamed or removed known-divergent case fails
+    // loudly instead of silently vanishing from the strict check below. It
+    // cannot detect whether the named cases still actually diverge — that is
+    // unsigned_data_set_known_divergence_empty_map_entry_fields's job: its
+    // "still differs from the vector" assertion goes red if pluto's output
+    // ever starts matching the spec.
     let mut skipped_sorted = skipped.clone();
     skipped_sorted.sort_unstable();
     let mut want_sorted: Vec<String> = KNOWN_DIVERGENT_UNSIGNED_DATA_SET_CASES

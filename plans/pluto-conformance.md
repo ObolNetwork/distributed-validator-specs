@@ -89,7 +89,7 @@ whether a ladder entry covers it, and whether it was reported upstream._
   `BTreeMap<String, Bytes>`) skips a map entry's key field when it equals `""` and
   skips its value field when it equals `b""` — proto3 default-value omission applied
   to the two synthetic fields of each map entry
-  (`prost-0.14.4/src/encoding.rs:1044-1059`, `encode_with_default`). Charon's
+  (prost 0.14.4, `encoding::encode_with_default`). Charon's
   `hashProto`, built on Go's `google.golang.org/protobuf`, always writes both map-entry
   fields regardless of default-ness. Confirmed by two vectors:
   `empty_value` (`set: {"0xaabb": ""}`) encodes to `0a0a0a063078616162621200` per
@@ -108,13 +108,13 @@ whether a ladder entry covers it, and whether it was reported upstream._
   again nothing else differs. Reachability in a live cluster (code inspection only,
   not differential execution, so flagged as such): an empty *value* cannot arise from
   honest duty execution on either implementation — `unmarshalUnsignedData`
-  (`~/charon/core/unsigneddata.go:666-704`) requires bytes decodable as a real
+  (`core/unsigneddata.go`) requires bytes decodable as a real
   `AttestationData`/`VersionedProposal`/`AggregatedAttestation`/`SyncContribution`,
   none of which SSZ/JSON-marshal to zero bytes, and `marshalUnsignedData`'s output
-  feeding `UnsignedDataSetToProto` (`~/charon/core/proto.go:226-236`) is never empty
+  feeding `UnsignedDataSetToProto` (`core/proto.go`) is never empty
   for a real duty. An empty *key* similarly cannot arise from honest code — DV pubkeys
   are validated to a fixed length by `PubKey.Bytes()`/`PubKeyFromBytes`
-  (`~/charon/core/types.go:274-298`, `len(k) != pkLen` check) before ever reaching
+  (`core/types.go`, `len(k) != pkLen` check) before ever reaching
   this map. Both edge cases are therefore reachable only via a malformed or malicious
   peer constructing a wire-level `UnsignedDataSet` protobuf directly (bypassing the
   normal duty-fetch/marshal path) — not something an honest node in a healthy cluster
