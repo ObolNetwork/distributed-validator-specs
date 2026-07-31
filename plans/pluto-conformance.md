@@ -68,7 +68,7 @@ pluto commit actually tested. Statuses: `todo` / `in progress` / `done`.
 | # | Check | Suite | Status | Verdict | Notes |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Harness scaffold + secp256k1 | `secp256k1_signatures` | done | PASS | Both cases pass: sign, recover, and verify_65 all match the vector via `pluto-k1util` (33-byte SEC1 pubkey). |
-| 2 | Proto encoding + SSZ hashing | `qbft_hashing` | done | FAIL (unsigned_data_set only) | `duty` (3/3), `qbft_signing_root` (6/6), `any_string` (4/4) all PASS. `unsigned_data_set` has 2/12 red: `empty_value` and `empty_key`. Real divergence, no ladder entry: prost's map encoding applies proto3 default-value omission *inside* map entries (skips an empty string key or empty bytes value), while charon's Go marshaler always writes both map-entry fields explicitly. See Findings. Pluto's own `crates/consensus/testdata/vectors/hashproto.json` never exercises an empty key/value entry, so this suite gives it strictly broader coverage — a candidate for pluto to adopt these vectors and retire its own file, not something this repo changes. |
+| 2 | Proto encoding + SSZ hashing | `qbft_hashing` | done | FAIL (unsigned_data_set only) | `duty` (3/3), `qbft_signing_root` (6/6), `any_string` (4/4) all PASS. `unsigned_data_set` has 10/12 strict-PASS; `empty_value` and `empty_key` are a real divergence, no ladder entry: prost's map encoding applies proto3 default-value omission *inside* map entries (skips an empty string key or empty bytes value), while charon's Go marshaler always writes both map-entry fields explicitly. See Findings. Pinned as a named known-divergence test (`unsigned_data_set_known_divergence_empty_map_entry_fields`) rather than left permanently red, so a future regression in the other 10 cases can't hide behind it; that test fails loudly if pluto's output ever changes (fixed or otherwise). Pluto's own `crates/consensus/testdata/vectors/hashproto.json` never exercises an empty key/value entry, so this suite gives it strictly broader coverage — a candidate for pluto to adopt these vectors and retire its own file, not something this repo changes. |
 | 3 | BLS threshold aggregation | `bls_threshold` | todo | — | |
 | 4 | Cluster hashes + lock verification | `cluster_hashing` | todo | — | |
 | 5 | Priority scoring | `priority_scoring` | todo | — | |
@@ -100,6 +100,27 @@ whether a ladder entry covers it, and whether it was reported upstream._
   interop risk: two clusters running pluto vs. charon nodes would compute different
   QBFT value hashes for an `UnsignedDataSet` containing an empty pubkey string or an
   empty per-DV data payload, breaking quorum. Not reported upstream to pluto yet.
+  Byte-level diff confirmed isolated (no second divergence hiding underneath): for
+  `empty_value`, pluto's bytes are exactly charon's map-entry content with the
+  trailing `1200` (empty-value field, tag+len0) truncated, length byte adjusted to
+  match — nothing else differs. For `empty_key`, pluto's bytes are exactly charon's
+  map-entry content with the leading `0a00` (empty-key field, tag+len0) truncated —
+  again nothing else differs. Reachability in a live cluster (code inspection only,
+  not differential execution, so flagged as such): an empty *value* cannot arise from
+  honest duty execution on either implementation — `unmarshalUnsignedData`
+  (`~/charon/core/unsigneddata.go:666-704`) requires bytes decodable as a real
+  `AttestationData`/`VersionedProposal`/`AggregatedAttestation`/`SyncContribution`,
+  none of which SSZ/JSON-marshal to zero bytes, and `marshalUnsignedData`'s output
+  feeding `UnsignedDataSetToProto` (`~/charon/core/proto.go:226-236`) is never empty
+  for a real duty. An empty *key* similarly cannot arise from honest code — DV pubkeys
+  are validated to a fixed length by `PubKey.Bytes()`/`PubKeyFromBytes`
+  (`~/charon/core/types.go:274-298`, `len(k) != pkLen` check) before ever reaching
+  this map. Both edge cases are therefore reachable only via a malformed or malicious
+  peer constructing a wire-level `UnsignedDataSet` protobuf directly (bypassing the
+  normal duty-fetch/marshal path) — not something an honest node in a healthy cluster
+  ever produces. This lowers the practical severity versus a "happens in normal
+  operation" reading, but the divergence itself (pluto and charon hashing the same
+  adversarial/malformed bytes differently) is still real and still a FAIL.
 
 ## Global Constraints
 
