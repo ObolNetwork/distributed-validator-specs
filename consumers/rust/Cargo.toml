@@ -14,9 +14,12 @@ pluto-k1util = { path = "../../../pluto/crates/k1util" }
 pluto-core = { path = "../../../pluto/crates/core" }
 pluto-consensus = { path = "../../../pluto/crates/consensus" }
 pluto-crypto = { path = "../../../pluto/crates/crypto" }
+pluto-cluster = { path = "../../../pluto/crates/cluster" }
+pluto-eth1wrap = { path = "../../../pluto/crates/eth1wrap" }
 k256 = { version = "0.13.4", features = ["ecdsa", "sha256"] }
 prost = "0.14"
 prost-types = "0.14"
+tokio = { version = "1", features = ["macros", "rt"] }
 
 [patch.crates-io]
 multistream-select = { path = "../../../pluto/third_party/multistream-select" }
