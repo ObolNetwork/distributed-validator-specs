@@ -73,7 +73,7 @@ pluto commit actually tested. Statuses: `todo` / `in progress` / `done`.
 | 4 | Cluster hashes + lock verification | `cluster_hashing` | done | FAIL (2 pinned known-divergence cases; at least 3 distinct affected fields — a lower bound, not a total) | `definition` 5/6 strict-PASS (`config_hash` and `definition_hash` both match on 5 cases, including the unsigned/signed pair proving config_hash is signature-independent); `all_empty_lists` is a real divergence, pinned (see Findings) — it carries **at least two independent parse blockers** (`operators`/`validators` null-rejection, then a masked `timestamp` missing-field rejection once the first is hypothetically fixed), so a partial upstream fix will not make it pass. `lock` 3/4 strict-PASS (`lock_hash` matches and `verify_hashes` succeeds on 3); `validator_without_deposit_data` is a second real divergence, pinned (see Findings). `real_keys_3_of_4`: hashes verify; the full `verify_signatures(&EthClient::new(""))` chain is asserted to fail specifically at the definition EIP-712 stage (`LockError::DefinitionSignaturesVerificationFailed`) because its operator/creator signatures are unavoidable placeholders (charon's EIP-712 signing helpers aren't exported for vector generation) — `Lock::verify_signatures` short-circuits there, so its private BLS-aggregate and node-signature checks are never reached from this external crate; that half is a coverage gap (not a failure), noted in the test's doc comment rather than mocked around. |
 | 5 | Priority scoring | `priority_scoring` | done | PASS | All 18/18 cases PASS end-to-end through the public `Prioritiser` API over an in-process libp2p (`MemoryTransport` + noise + yamux) network, with a mock `Consensus` capturing the proposed `PriorityResult` (`calculate_result` itself is `pub(crate)`, unreachable directly). Covers below-quorum rejection (empty-result pins), single-priority and two-priority scoring, count-then-relative-priority ordering, and the two `test-case`-name-only "deterministic ordering" cases (score ties resolved by first-seen order in peer-id-sorted input — confirmed stable, no divergence from Charon v1.7.1's own stable-sort assumption). Peer `PeerId`s are generated then sorted ascending and mapped onto the vector's peer indices, since scoring tie-breaks are first-seen over peer-id-sorted input. Also pins `PROTOCOL_ID`/`protocols()` to the legacy slash-less `charon/priority/2.0.0` (ladder: preferred slash form is unreleased). Full 18-case suite runs in under 1s (well under the 2-minute budget). |
 | 6 | Round timer deadlines | `timer_deadlines` | done | round_timeout: PASS **only under `ProposalTimeout` enabled**, a documented non-default precondition (pluto's *default* config has a pinned, real divergence on `PROPOSER`/round-1 cases — see Notes and Findings); deadline: ABSENT-OK, with a real code-level slot-invariance pin (not just a comment); duty_start_delay: UNREACHABLE | `round_timeouts_with_proposal_timeout_enabled`: 216/216 PASS, but only with `Feature::ProposalTimeout` explicitly enabled (it is `Status::Alpha`, off under pluto's `Config::default()`). `round_timeouts_pluto_default_feature_set` runs the same 216 cases under pluto's actual default `FeatureSet` and pins the resulting divergence: the 207 non-`PROPOSER`-round-1 cases still match the vectors, but all 9 `PROPOSER`/round-1 cases (3 slots x 3 slot durations) diverge — pluto's default gives 1s, the vectors (which assume `ProposalTimeout` enabled) expect 1.5s. This is a real, pinned known-divergence (see Findings), not swept under the enabled-feature test's PASS. `deadline_nanos`: `round_timeout_is_duty_slot_invariant` builds two timers per (duty_type, round) combination (24 total, covering all cases) differing only in `slot` (0 vs. 7231) and asserts bit-identical measured timeouts — a real code pin for "no timer reads slot", not a doc comment, so it fails loudly if `with_duty`/`RoundTimer::timer` ever grows slot-dependence; genesis-invariance is structurally guaranteed (the API has no genesis parameter at all) and is stated as such rather than tested. Matches ladder entry "Deterministic (genesis-derived) eager double linear round deadlines" (`first_charon_release: v1.9.0` > pluto's v1.7.1 anchor). `duty_start_delay_nanos` is UNREACHABLE: `delay_slot_offset` (`crates/core/src/scheduler.rs`) is a non-`pub` `async fn` with no external caller, confirmed still private. |
-| 7 | QBFT message limits | `qbft_msg_limits` | todo | — | |
+| 7 | QBFT message limits | `qbft_msg_limits` | done | ABSENT-OK (counts, both directions); PASS (wire_size) | `counts` (11/11 cases run): pluto has neither the spec's `2n` justification cap nor any `2*(j+1)` values cap. Its own cap is `4 * node_count()` (component.rs `MAX_JUSTIFICATIONS_PER_NODE = 4`, strict `>`), and there is no values-length check anywhere in `crates/consensus/src`/`crates/core/src`. Every counts case's `justification_count` stays at/under pluto's `4n` (proven structurally in the test, not by case name), so pluto accepts all 11 cases: 5 match the spec's `accepted: true` cases outright, 6 are ABSENT-OK divergences (spec says reject — `too_many_justifications` or `too_many_values` — pluto accepts) against ladder entry "QBFT DECIDED-resend rate limit and message size/count limits" (`first_charon_release: null`). Two extra tests pin pluto's own real boundary directly, since no vector case reaches it: `4 * nodes` justifications accepted, `4 * nodes + 1` rejected with `Error::TooManyJustifications { count, max }` asserted exactly (not just "any error"). `wire_size` (4/4 cases): `MAX_CONSENSUS_MSG_SIZE` (32 MiB) and `MAX_MESSAGE_SIZE` (128 MiB) constants pinned; enforcement runs the real `pluto_p2p::proto::read_protobuf_with_max_size` reader (mirroring `qbft/p2p.rs`'s own unit tests) over `futures::io::Cursor` — 1024 bytes and exactly 32 MiB accepted (round-trip decode verified byte-for-byte), 32 MiB+1 and 128 MiB rejected with a "too large" reason, matching `msg_too_large` exactly. `DeadlinerHandle::always` from the probe doc turned out to be `#[cfg(test)]`-gated inside pluto_core (not reachable externally); worked around with the real public `DeadlinerTask::start` and a custom future-deadline `DeadlineCalculator` (pluto's own public `NeverExpiringCalculator` returns `NoDeadline`, which `handle`'s strict `!= Scheduled` check treats as `Error::DutyExpired` — a real gotcha, not a doc typo). See Findings for the `4n` cap as its own hardening decision. |
 | 8 | DECIDED-resend limiting | `qbft_decided_resends` | todo | — | |
 | 9 | Sender binding + peer map | `parsigex_sender_binding` | todo | — | |
 | 10 | Coverage guard + docs | all | todo | — | |
@@ -215,6 +215,41 @@ whether a ladder entry covers it, and whether it was reported upstream._
   compatibility table documents the ladder and is enforced by
   `tests/test_release.py`, so the entry and the README update need to land
   together, in their own commit — not folded into this conformance task.
+
+- **Pluto's justification-count cap is `4n`, not the spec's `2n` (task 7,
+  `qbft_msg_limits/counts`).** `Consensus::handle`
+  (`crates/consensus/src/qbft/component.rs`) enforces
+  `MAX_JUSTIFICATIONS_PER_NODE.saturating_mul(node_count())` with
+  `MAX_JUSTIFICATIONS_PER_NODE = 4`, checked with a strict `>` (a count exactly
+  equal to `4n` is accepted). This is pluto's own unilateral defensive
+  hardening — its doc comment states it bounds secp256k1-recovery work against
+  a maliciously large message, independent of charon, which the same doc
+  comment notes has no explicit cap at all. It is neither charon v1.7.1's
+  absence (which would be no cap) nor the spec's `2n` formula; it happens to
+  sit strictly looser than the spec everywhere the vectors probe it (every
+  `justification_count` between the spec's `2n+1` and pluto's `4n` is accepted
+  by pluto, rejected by the spec). Pinned directly in code (not just this
+  note): `pluto_own_justification_cap_accepts_at_boundary` /
+  `_rejects_one_over_boundary` assert `4 * nodes` accepted and `4 * nodes + 1`
+  rejected with `Error::TooManyJustifications { count, max }` matching
+  exactly. Not reported upstream — this is pluto's own choice, not a defect,
+  though it is worth pluto documenting the `4n` constant against the spec's
+  `2n` explicitly rather than only against "no cap" charon.
+
+- **Pluto has no cap at all on `QbftConsensusMsg.values` length (task 7,
+  `qbft_msg_limits/counts`).** Confirmed by exhaustive grep of
+  `crates/consensus/src` and `crates/core/src`: `values_by_hash`
+  (`component.rs`) iterates the incoming `Vec<Any>` and inserts each into a
+  `HashMap` with no length bound anywhere, unlike the explicit
+  `MAX_JUSTIFICATIONS_PER_NODE` cap on justifications. The spec's `2*(j+1)`
+  values cap (`charon_anchor.json` ladder entry "QBFT DECIDED-resend rate
+  limit and message size/count limits", `first_charon_release: null` — absent
+  from every released charon) is therefore an ABSENT-OK divergence at every
+  vector case that exercises it (`no_justifications_three_values`,
+  `values_one_over_limit_for_full_justification_set`,
+  `both_limits_exceeded_reports_justifications`): the spec rejects, pluto
+  accepts. Not reported upstream — matches charon's own absence at the pinned
+  anchor.
 
 ## Global Constraints
 
