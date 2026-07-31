@@ -68,7 +68,7 @@ pluto commit actually tested. Statuses: `todo` / `in progress` / `done`.
 | # | Check | Suite | Status | Verdict | Notes |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Harness scaffold + secp256k1 | `secp256k1_signatures` | done | PASS | Both cases pass: sign, recover, and verify_65 all match the vector via `pluto-k1util` (33-byte SEC1 pubkey). |
-| 2 | Proto encoding + SSZ hashing | `qbft_hashing` | todo | — | |
+| 2 | Proto encoding + SSZ hashing | `qbft_hashing` | done | FAIL (unsigned_data_set only) | `duty` (3/3), `qbft_signing_root` (6/6), `any_string` (4/4) all PASS. `unsigned_data_set` has 2/12 red: `empty_value` and `empty_key`. Real divergence, no ladder entry: prost's map encoding applies proto3 default-value omission *inside* map entries (skips an empty string key or empty bytes value), while charon's Go marshaler always writes both map-entry fields explicitly. See Findings. Pluto's own `crates/consensus/testdata/vectors/hashproto.json` never exercises an empty key/value entry, so this suite gives it strictly broader coverage — a candidate for pluto to adopt these vectors and retire its own file, not something this repo changes. |
 | 3 | BLS threshold aggregation | `bls_threshold` | todo | — | |
 | 4 | Cluster hashes + lock verification | `cluster_hashing` | todo | — | |
 | 5 | Priority scoring | `priority_scoring` | todo | — | |
@@ -82,6 +82,24 @@ pluto commit actually tested. Statuses: `todo` / `in progress` / `done`.
 
 _Append findings here as tasks produce them: what diverged, file:line in pluto,
 whether a ladder entry covers it, and whether it was reported upstream._
+
+- **`UnsignedDataSet` map entries with an empty key or empty value hash differently
+  than charon (FAIL, task 2, `qbft_hashing/unsigned_data_set`).** prost's generated
+  `btree_map` encoding (`pluto_core::corepb::v1::UnsignedDataSet.set`, a
+  `BTreeMap<String, Bytes>`) skips a map entry's key field when it equals `""` and
+  skips its value field when it equals `b""` — proto3 default-value omission applied
+  to the two synthetic fields of each map entry
+  (`prost-0.14.4/src/encoding.rs:1044-1059`, `encode_with_default`). Charon's
+  `hashProto`, built on Go's `google.golang.org/protobuf`, always writes both map-entry
+  fields regardless of default-ness. Confirmed by two vectors:
+  `empty_value` (`set: {"0xaabb": ""}`) encodes to `0a0a0a063078616162621200` per
+  charon but `0a080a06307861616262` per pluto (missing the empty-value field 2);
+  `empty_key` (`set: {"": "01"}`) encodes to `0a050a00120101` per charon but
+  `0a03120101` per pluto (missing the empty-key field 1). No `charon_anchor.json`
+  ladder entry covers map-entry presence, so this is not `ABSENT-OK` — it is a real
+  interop risk: two clusters running pluto vs. charon nodes would compute different
+  QBFT value hashes for an `UnsignedDataSet` containing an empty pubkey string or an
+  empty per-DV data payload, breaking quorum. Not reported upstream to pluto yet.
 
 ## Global Constraints
 
