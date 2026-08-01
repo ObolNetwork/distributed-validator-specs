@@ -43,6 +43,7 @@ targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
 | ------------------------------------------------------------------ | -------------------- |
 | `MsgSync.nickname` field (DKG sync)                                 | `v1.9.0`             |
 | Deterministic (genesis-derived) eager double linear round deadlines | `v1.9.0`             |
+| Extended 1.5s proposer round-1 timeout (`proposal_timeout`)         | `v1.9.0`             |
 | Linear round timer subsequent-round timeout fix                     | unreleased (`v1.11.0` RCs) |
 | QBFT DECIDED-resend rate limit and message size/count limits        | unreleased (`v1.11.0` RCs) |
 | Preferred priority protocol ID `/charon/priority/2.0.0`             | unreleased (`main`)  |

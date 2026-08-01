@@ -215,6 +215,11 @@ whether a ladder entry covers it, and whether it was reported upstream._
   compatibility table documents the ladder and is enforced by
   `tests/test_release.py`, so the entry and the README update need to land
   together, in their own commit — not folded into this conformance task.
+  **Addressed on this branch:** `charon_anchor.json` now carries "Extended
+  1.5s proposer round-1 timeout (proposal_timeout)" (`v1.9.0`), README's
+  compatibility table has the matching row, and `docs/dv-spec/consensus.md`'s
+  timer section now states the proposer round-1 exception the vectors and
+  reference implementation (`PROPOSAL_ROUND_TIMEOUT`) already carried.
 
 - **Pluto's justification-count cap is `4n`, not the spec's `2n` (task 7,
   `qbft_msg_limits/counts`).** `Consensus::handle`
