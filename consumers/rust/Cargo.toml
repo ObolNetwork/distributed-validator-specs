@@ -34,21 +34,7 @@ tokio-util = "0.7.11"
 futures = "0.3"
 async-trait = "0.1.89"
 chrono = "0.4"
-libp2p = { version = "0.56", features = [
-    "autonat",
-    "dns",
-    "identify",
-    "macros",
-    "mdns",
-    "noise",
-    "ping",
-    "quic",
-    "relay",
-    "secp256k1",
-    "tcp",
-    "tokio",
-    "yamux",
-] }
+libp2p = { version = "0.56", features = ["noise", "tokio", "yamux"] }
 
 [patch.crates-io]
 multistream-select = { path = "../../../pluto/third_party/multistream-select" }
