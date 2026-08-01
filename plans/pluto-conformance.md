@@ -222,26 +222,24 @@ whether a ladder entry covers it, and whether it was reported upstream._
   presenting as an unqualified default-config PASS. Not reported upstream to
   pluto (this is pluto correctly tracking its own v1.7.1 anchor, not a defect).
   **Since 2026-08-01 this is formally ABSENT-OK:** the ladder entry "Extended
-  1.5s proposer round-1 timeout (proposal_timeout)" (`v1.9.0`) added by the
-  recommendation below now covers it, and the test's comments name that entry
-  per the taxonomy.
+  1.5s proposer round-1 timeout (proposal_timeout)" (`v1.9.0`), added on this
+  branch (see the next finding), now covers it, and the test's comments name
+  that entry per the taxonomy.
 
-- **Recommendation for this repo (not pluto): `charon_anchor.json`'s `behaviours`
-  ladder has no entry for the proposal-timeout feature-flag stabilization
-  (task 6).** The promotion of `ProposalTimeout` from alpha to stable-by-default
-  in charon v1.9.0 (`06b6371b`, #4296) is exactly the kind of postdating-v1.7.1
-  behaviour change the ladder exists to track, and the `timer_deadlines` vectors
+- **Repo-side gap found by task 6, addressed on this branch:
+  `charon_anchor.json`'s `behaviours` ladder had no entry for the
+  proposal-timeout feature-flag stabilization.** The promotion of
+  `ProposalTimeout` from alpha to stable-by-default in charon v1.9.0
+  (`06b6371b`, #4296) is exactly the kind of postdating-v1.7.1 behaviour
+  change the ladder exists to track, and the `timer_deadlines` vectors
   already depend on it (they assume `ProposalTimeout` enabled), but no ladder
-  entry names it — unlike the sibling "Deterministic (genesis-derived) eager
-  double linear round deadlines" entry, which does. Adding an entry is a
-  separate, self-contained change to this repo's release surface: `README`'s
-  compatibility table documents the ladder and is enforced by
-  `tests/test_release.py`, so the entry and the README update need to land
-  together, in their own commit — not folded into this conformance task.
-  **Addressed on this branch:** `charon_anchor.json` now carries "Extended
-  1.5s proposer round-1 timeout (proposal_timeout)" (`v1.9.0`), README's
-  compatibility table has the matching row, and `docs/dv-spec/consensus.md`'s
-  timer section now states the proposer round-1 exception the vectors and
+  entry named it — unlike the sibling "Deterministic (genesis-derived) eager
+  double linear round deadlines" entry, which does. Fixed in its own commit
+  (the ladder and README's compatibility table must move together —
+  `tests/test_release.py` enforces that): `charon_anchor.json` now carries
+  "Extended 1.5s proposer round-1 timeout (proposal_timeout)" (`v1.9.0`),
+  README has the matching row, and `docs/dv-spec/consensus.md`'s timer
+  section now states the proposer round-1 exception the vectors and
   reference implementation (`PROPOSAL_ROUND_TIMEOUT`) already carried.
 
 - **Pluto's justification-count cap is `4n`, not the spec's `2n` (task 7,
