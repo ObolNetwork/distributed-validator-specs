@@ -392,6 +392,13 @@ fn qbft_consensus_msg_of_encoded_len(target_len: usize) -> pbconsensus::QbftCons
 /// `inbound_rejects_message_exceeding_max_consensus_size`) invoke
 /// `read_protobuf_with_max_size` with `MAX_CONSENSUS_MSG_SIZE`, over the same
 /// `futures::io::Cursor` in-memory stream type.
+///
+/// Matching on `err.to_string()` below is in tension with
+/// `test_vectors/README.md`'s "the slugs are the contract, wording is not":
+/// it is unavoidable here because every rejection path in
+/// `read_protobuf_with_max_size` reports through the same `io::ErrorKind::InvalidData`
+/// with no structured reason code, and pluto's own `p2p.rs` tests assert the
+/// same substring for the same reason.
 #[tokio::test]
 async fn wire_size_enforcement() {
     let suite = load_suite("qbft_msg_limits");
