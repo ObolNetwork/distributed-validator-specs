@@ -382,10 +382,9 @@ Also fixed in this pass:
      ~/charon/`. All nine suites, **314 subtests**, run green against a charon
      worktree at the anchor `6054bcb2`. Not a PR yet — this repo cannot merge into
      charon, so `consumers/README.md` documents placement and the pinning rules.
-   - [ ] **Pluto (Rust)** — not started. Pluto's crate layout mirrors charon's
-     (`crates/{cluster,consensus,priority,parsigex,crypto,k1util,...}`), and it
-     already carries `crates/consensus/testdata/vectors/hashproto.json`, which
-     `qbft_hashing.json` is meant to replace.
+   - [x] **Pluto (Rust), written and verified 2026-08-01.** See
+     `plans/pluto-conformance.md` and its Results table for the full
+     per-suite verdicts against pluto commit `67088a2`.
 
    Correction to the plan's wording: it cannot be "a Go test package". Almost
    everything the vectors cover is unexported in charon — `hashProto`,
