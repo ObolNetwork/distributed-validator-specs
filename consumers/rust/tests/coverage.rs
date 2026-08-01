@@ -2,7 +2,11 @@
 //!
 //! An uncovered suite is indistinguishable from a passing one: the Go consumer's
 //! `TestEverySuiteIsCovered` (`consumers/go/testutil/specvectors/specvectors.go`)
-//! catches this for Charon; this is the equivalent for the Rust side.
+//! catches this for Charon; this is the equivalent for the Rust side. Go's
+//! version also asserts each suite ships cases, read from its vendored
+//! release manifest; this consumer reads `test_vectors/` live and has no
+//! manifest, so non-emptiness is enforced by each suite test pinning its
+//! exact case count instead.
 
 use std::collections::BTreeSet;
 
