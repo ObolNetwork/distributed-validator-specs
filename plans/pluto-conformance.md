@@ -158,8 +158,13 @@ whether a ladder entry covers it, and whether it was reported upstream._
   `timestamp`". Confirmed directly: mutating `all_empty_lists`'s `operators`/
   `validators` from `null` to `[]` (simulating a fix to (1)) still fails to
   parse on the missing `timestamp` key; adding an empty `timestamp` string on
-  top of that mutation parses successfully, with no further blocker found in
-  that specific probe (not a proof no more exist elsewhere in the struct). No
+  top of that mutation parses successfully. Re-confirmed 2026-08-01 by a
+  layered probe: for *this case* the blocker set is exactly these three
+  fields — `name` (absent from the JSON) is already covered by
+  `#[serde(default)]` and `deposit_amounts: null` by `DepositAmountsSerde`,
+  so the fix for `all_empty_lists` is three `#[serde(default)]` attributes.
+  Charon `omitempty` fields this case does not exercise may still hide more
+  instances of the same root cause elsewhere in the structs. No
   `charon_anchor.json` ladder entry covers any of this — the ladder tracks
   *protocol behaviour* that postdates charon v1.7.1, and all of these field tags
   are unchanged, long-standing charon serialization behaviour, not a recent
@@ -294,8 +299,10 @@ whether a ladder entry covers it, and whether it was reported upstream._
   (`unknown_sender_rejected`). Ladder entry "Sender-bound share indices in the DKG
   lock-hash exchange" (`first_charon_release: null`) covers this exactly — no released
   charon carries the check either, so this is ABSENT-OK, not reported upstream.
-  Note that DKG's own lock-hash exchange does not even go through this verifier: `Exchanger`
-  (`crates/dkg/src/exchanger.rs`) wires parsigex with a no-op verifier and instead checks
+  Note that DKG's own lock-hash exchange does not even go through this verifier: DKG wires
+  parsigex with a no-op verifier in `crates/dkg/src/node.rs::setup_p2p` (`Exchanger` itself,
+  `crates/dkg/src/exchanger.rs`, receives the already-built parsigex handle; its own no-op
+  verifiers are `#[cfg(test)]`-only) and instead checks
   signatures post-hoc in `crates/dkg/src/aggregate.rs::agg_lock_hash_sig`/
   `verify_threshold_partials` (same no-sender-parameter shape) — but `crates/dkg/src/lib.rs`
   declares `mod aggregate;` without `pub`, so that code is not reachable from an external
@@ -372,7 +379,7 @@ The smallest suite against the most-public pluto API (`pluto-k1util`: everything
 - Produces: `spec_vectors_pluto::load_suite(name: &str) -> serde_json::Value` and
   `spec_vectors_pluto::unhex(s: &str) -> Vec<u8>` — every later task consumes these.
 
-- [ ] **Step 1: Write the package scaffold**
+- [x] **Step 1: Write the package scaffold**
 
 `consumers/rust/Cargo.toml` (copy the exact version requirements for `serde_json`,
 `hex`, `k256` from `~/pluto/Cargo.toml` `[workspace.dependencies]`):
@@ -445,7 +452,7 @@ pub fn unhex(s: &str) -> Vec<u8> {
 }
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `consumers/rust/tests/secp256k1_signatures.rs`. The suite carries one secret key and
 cases of `{input.hash_hex, signature_hex, recovered_pubkey_hex}` — signing is RFC 6979
@@ -496,7 +503,7 @@ print(json.load(open('test_vectors/secp256k1_signatures.json'))['pubkey_hex'])"`
 if it is 33 bytes it is SEC1 compressed and `to_sec1_bytes()` matches; if 65 bytes,
 use `k256::EncodedPoint::from(&rec).to_untagged_bytes()` accordingly.
 
-- [ ] **Step 3: Run it**
+- [x] **Step 3: Run it**
 
 ```bash
 cd consumers/rust && cargo test --test secp256k1_signatures
@@ -504,11 +511,11 @@ cd consumers/rust && cargo test --test secp256k1_signatures
 Expected: compiles against `~/pluto` and all cases pass (charon and pluto share
 RFC 6979 + low-S via k256). Any red case is a FAIL finding — triage per the taxonomy.
 
-- [ ] **Step 4: Record the verdict**
+- [x] **Step 4: Record the verdict**
 
 Fill the pluto commit under test and row 1 of the Results table in this plan.
 
-- [ ] **Step 5: Update `consumers/README.md` and commit**
+- [x] **Step 5: Update `consumers/README.md` and commit**
 
 Add to the consumer table: `| Pluto (Rust) | in progress — see plans/pluto-conformance.md | [rust/](rust) |`,
 plus a short "Pluto consumer" section: sibling-checkout requirement, the
@@ -536,7 +543,7 @@ git commit -m "Add Rust consumer scaffold and secp256k1 suite for pluto"
   `~/pluto/crates/core/src/lib.rs` before writing; the golden test at
   `~/pluto/crates/consensus/src/qbft/msg.rs:420` shows working imports to copy).
 
-- [ ] **Step 1: Add dependencies**
+- [x] **Step 1: Add dependencies**
 
 ```toml
 pluto-consensus = { path = "../../../pluto/crates/consensus" }
@@ -545,7 +552,7 @@ prost = "<copy from pluto workspace>"
 prost-types = "<copy from pluto workspace>"
 ```
 
-- [ ] **Step 2: Write the test — four groups, one test fn each**
+- [x] **Step 2: Write the test — four groups, one test fn each**
 
 ```rust
 use prost::Message;
@@ -665,7 +672,7 @@ fn any_string_hashing() {
 }
 ```
 
-- [ ] **Step 3: Run it**
+- [x] **Step 3: Run it**
 
 ```bash
 cargo test --test qbft_hashing
@@ -675,12 +682,12 @@ golden file and none of these values moved after v1.7.1. If the `any_string`
 *encoding* diverges (type URL prefix differs), decode the vector's `encoding_hex`
 to see charon's actual type URL and fix the constructed `type_url`, not the assertion.
 
-- [ ] **Step 4: Record verdict in Results row 2; note in the row that pluto's own
+- [x] **Step 4: Record verdict in Results row 2; note in the row that pluto's own
   `crates/consensus/testdata/vectors/hashproto.json` is now redundant with this suite
   (the stated goal of the qbft_hashing suite) — a candidate upstream cleanup, not
   something this repo changes.**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add consumers/rust plans/pluto-conformance.md
@@ -701,7 +708,7 @@ git commit -m "Run qbft_hashing suite against pluto"
   (all trait methods pub); `pluto_crypto::types::{PublicKey, PrivateKey, Signature, Index}`
   are plain byte arrays. Share indices are 1-based, matching the suite.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 The suite pins: per-share pubkeys and partial signatures over `message_hex`, four
 different quorums whose threshold aggregates must equal the group signature, secret
@@ -794,10 +801,10 @@ fn bls_threshold() {
 }
 ```
 
-- [ ] **Step 2: Run** `cargo test --test bls_threshold`. Expected: PASS — pluto's
+- [x] **Step 2: Run** `cargo test --test bls_threshold`. Expected: PASS — pluto's
   `blst_impl` cites charon v1.7.1 parity and BLS did not change after it.
 
-- [ ] **Step 3: Record verdict in Results row 3; commit**
+- [x] **Step 3: Record verdict in Results row 3; commit**
   (`git commit -m "Run bls_threshold suite against pluto"`).
 
 ---
@@ -817,7 +824,7 @@ fn bls_threshold() {
   async `verify_signatures(&EthClient)`). Raw hash functions are `pub(crate)`; going
   through set-then-compare covers the same code.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 ```rust
 use spec_vectors_pluto::load_suite;
@@ -881,7 +888,7 @@ Before writing the field names for expected hashes, check the suite's actual key
 print(list(c['definition'][0]), list(c['lock'][0]))"`) — the plan's
 `config_hash_hex`/`definition_hash_hex`/`lock_hash_hex` names must match what is there.
 
-- [ ] **Step 2: Add the full-verification check for `real_keys_3_of_4`**
+- [x] **Step 2: Add the full-verification check for `real_keys_3_of_4`**
 
 In the same file — this is the case that chains lock hash, public shares, plain BLS
 aggregation and node signatures; only it carries real signatures:
@@ -907,13 +914,13 @@ async fn real_keys_lock_verifies_end_to_end() {
 name and constructor; if `verify_signatures` demands a live EL for these operators'
 sig type, record that limitation in the Results row instead of mocking one.)
 
-- [ ] **Step 3: Run** `cargo test --test cluster_hashing`. Expected: v1.10 files parse
+- [x] **Step 3: Run** `cargo test --test cluster_hashing`. Expected: v1.10 files parse
   (pluto supports V1_0…V1_10) and all hashes match — pluto's own testdata includes
   charon's `cluster_lock_v1_10_0.json` golden. Parse *failures* here are findings:
   the inputs are verbatim charon files, so a rejection means pluto cannot load a real
   charon artifact.
 
-- [ ] **Step 4: Record verdict in Results row 4; commit**
+- [x] **Step 4: Record verdict in Results row 4; commit**
   (`git commit -m "Run cluster_hashing suite against pluto"`).
 
 ---
@@ -937,7 +944,7 @@ libp2p network — pluto's own `crates/priority/tests/prioritiser_test.rs` is an
   `Consensus` trait (implement a mock capturing the proposed `PriorityResult`),
   `MsgVerifier` (`Box::new(|_| Ok(()))`), proto types `PriorityMsg`, `PriorityTopicProposal`.
 
-- [ ] **Step 1: Write the harness**
+- [x] **Step 1: Write the harness**
 
 Shape (helpers copied from `prioritiser_test.rs` — that file compiles against public
 API only, so everything it does is available here):
@@ -972,7 +979,7 @@ if present, order-only otherwise. Cases where `result` is `[]` assert the topic 
 absent (below `min_required`) — an empty expected list is a *rejection* pin, not a
 skip.
 
-- [ ] **Step 2: Add the protocol-ID pin (ladder item 6)**
+- [x] **Step 2: Add the protocol-ID pin (ladder item 6)**
 
 ```rust
 #[test]
@@ -986,12 +993,12 @@ fn priority_protocol_ids() {
 }
 ```
 
-- [ ] **Step 3: Run** `cargo test --test priority_scoring`. Expected: scoring cases
+- [x] **Step 3: Run** `cargo test --test priority_scoring`. Expected: scoring cases
   PASS (the algorithm predates v1.7.1 and pluto's stable sort matches the spec).
   Watch the ties: charon v1.7.1 used an unstable sort — if any tie-case diverges,
   that is ladder entry "Stable sort of scored priorities" → triage before verdicting.
 
-- [ ] **Step 4: Record verdict in Results row 5; commit**
+- [x] **Step 4: Record verdict in Results row 5; commit**
   (`git commit -m "Run priority_scoring suite against pluto"`).
 
 ---
@@ -1017,7 +1024,7 @@ The vectors give `duty_start_delay_nanos`, `round_timeout_nanos` and absolute
   add `pluto-featureset = { path = "../../../pluto/crates/featureset" }` if
   `FeatureSet` lives there)
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 ```rust
 use std::time::Duration;
@@ -1054,7 +1061,7 @@ the timer future under a paused clock and copy that pattern — if the future re
 to its deadline `Instant` without needing `tokio::time::advance`, the above works; if
 it sleeps, wrap with `tokio::time::timeout` + `advance`.
 
-- [ ] **Step 2: Determine the two remaining columns' verdicts**
+- [x] **Step 2: Determine the two remaining columns' verdicts**
 
 Read `EagerDoubleLinearRoundTimer::with_duty` and its callers: if no genesis/slot
 timing enters the deadline, mark `deadline_nanos` ABSENT-OK (ladder v1.9.0 entry)
@@ -1062,13 +1069,13 @@ and add a pinned-divergence comment in the test naming the entry. Confirm
 `delay_slot_offset` is still private → mark `duty_start_delay_nanos` UNREACHABLE
 with file:line.
 
-- [ ] **Step 3: Run** `cargo test --test timer_deadlines`. Triage: mismatches on
+- [x] **Step 3: Run** `cargo test --test timer_deadlines`. Triage: mismatches on
   linear rounds ≥ 2 are the known nanosecond bug (ladder "Linear round timer
   subsequent-round timeout fix", `null`) — if the vectors' proposer/linear cases hit
   it, split those cases into a pinned-divergence check asserting pluto's 200ns
   schedule, named for the ladder entry, and keep the rest strict.
 
-- [ ] **Step 4: Record verdict in Results row 6 (verdict per column:
+- [x] **Step 4: Record verdict in Results row 6 (verdict per column:
   timeout / deadline / start-delay); commit**
   (`git commit -m "Run timer_deadlines suite against pluto"`).
 
@@ -1088,7 +1095,7 @@ with file:line.
   `sign_msg`: clear signature → `hash_proto` → `pluto_k1util::sign` (Task 2 proved
   the root; Task 1 proved the signature).
 
-- [ ] **Step 1: Write the `counts` half**
+- [x] **Step 1: Write the `counts` half**
 
 ```rust
 // Per `counts` case (input: nodes, justification_count, value_count):
@@ -1116,7 +1123,7 @@ with file:line.
 // breaks liveness and no ladder entry can excuse it.
 ```
 
-- [ ] **Step 2: Write the `wire_size` half**
+- [x] **Step 2: Write the `wire_size` half**
 
 ```rust
 #[test]
@@ -1137,11 +1144,11 @@ async fn wire_size_enforcement() {
 }
 ```
 
-- [ ] **Step 3: Run** `cargo test --test qbft_msg_limits`, triage every red case
+- [x] **Step 3: Run** `cargo test --test qbft_msg_limits`, triage every red case
   against the pre-registered expectations — anything *outside* them (e.g. an
   at-limit case rejected) is a FAIL finding.
 
-- [ ] **Step 4: Record verdict in Results row 7 and the 4n-cap finding under
+- [x] **Step 4: Record verdict in Results row 7 and the 4n-cap finding under
   Findings; commit** (`git commit -m "Run qbft_msg_limits suite against pluto"`).
 
 ---
@@ -1161,7 +1168,7 @@ rebroadcasts on every post-decision ROUND-CHANGE from another source). Ladder en
   MSG_ROUND_CHANGE, MSG_DECIDED, SomeMsg}` — all public with public fields; implement
   `QbftTypes` and `SomeMsg` for a minimal test message type.
 
-- [ ] **Step 1: Write the harness**
+- [x] **Step 1: Write the harness**
 
 ```rust
 // Per case (input: nodes, decided_round, events[{source, round}], rebroadcast[i]):
@@ -1187,7 +1194,7 @@ rebroadcasts on every post-decision ROUND-CHANGE from another source). Ladder en
 //     The test passes on the pin reading and prints the spec-reading mismatch count.
 ```
 
-- [ ] **Step 2: Run** `cargo test --test qbft_decided_resends`.
+- [x] **Step 2: Run** `cargo test --test qbft_decided_resends`.
 
 Fallback, only if driving `run` externally proves impractical after a real attempt
 (e.g. `SomeMsg` cannot be implemented outside the crate): verdict the row
@@ -1195,7 +1202,7 @@ UNREACHABLE, cite `crates/core/src/qbft/mod.rs:494-503` as the inspection eviden
 for ABSENT-OK, and leave the test file in place with `#[ignore]` and a comment
 explaining what blocked it.
 
-- [ ] **Step 3: Record verdict in Results row 8; commit**
+- [x] **Step 3: Record verdict in Results row 8; commit**
   (`git commit -m "Run qbft_decided_resends suite against pluto"`).
 
 ---
@@ -1216,7 +1223,7 @@ construction is reachable.
 - Modify: `consumers/rust/Cargo.toml` (add `pluto-parsigex`, and `pluto-dkg` if the
   exchanger lives there)
 
-- [ ] **Step 1: Probe and write the test**
+- [x] **Step 1: Probe and write the test**
 
 ```rust
 // cases (input: share_idx_by_peer {self, other}, sender, share_idx; accepted, reason):
@@ -1234,11 +1241,11 @@ construction is reachable.
 //   (crates/app/src/node/mod.rs:800), verdict that half UNREACHABLE with file:line.
 ```
 
-- [ ] **Step 2: Run** `cargo test --test parsigex_sender_binding`, triage: a missing
+- [x] **Step 2: Run** `cargo test --test parsigex_sender_binding`, triage: a missing
   *peer-map* validation (accepting an incomplete map) is a FAIL finding — charon
   v1.7.1 already rejects it, no ladder cover. Sender-binding absence is ABSENT-OK.
 
-- [ ] **Step 3: Record verdict in Results row 9; commit**
+- [x] **Step 3: Record verdict in Results row 9; commit**
   (`git commit -m "Run parsigex_sender_binding suite against pluto"`).
 
 ---
@@ -1251,7 +1258,7 @@ construction is reachable.
 - Modify: `tests/test_consumers.py` (extend to the Rust consumer)
 - Modify: `plans/spec-completion.md` (Phase 3 item 2 pluto bullet → point here)
 
-- [ ] **Step 1: Write the coverage guard**
+- [x] **Step 1: Write the coverage guard**
 
 The Go consumer's `TestEverySuiteIsCovered` has an equivalent here: an uncovered
 suite is indistinguishable from a passing one.
@@ -1292,7 +1299,7 @@ fn every_suite_is_covered() {
 }
 ```
 
-- [ ] **Step 2: Extend `tests/test_consumers.py`**
+- [x] **Step 2: Extend `tests/test_consumers.py`**
 
 Mirror the existing Go mapping check: assert each of the nine suites appears in
 `consumers/rust/tests/coverage.rs`'s `COVERED` table and that each declared test
@@ -1300,7 +1307,7 @@ file exists — read the file with a regex over the `("suite", "file")` pairs, t
 same technique the file already uses for the Go side (the Rust code is not compiled
 here either). Run `uv run pytest tests/test_consumers.py` and confirm green.
 
-- [ ] **Step 3: Finalize docs**
+- [x] **Step 3: Finalize docs**
 
 - `consumers/README.md`: Pluto row lists suites run / subcheck count / pluto commit /
   verdict summary, and a "running it" snippet:
@@ -1311,14 +1318,14 @@ here either). Run `uv run pytest tests/test_consumers.py` and confirm green.
 - `plans/spec-completion.md` Phase 3 item 2: change the pluto bullet from
   "not started" to a pointer at this plan and its Results table.
 
-- [ ] **Step 4: Full run + quality checks**
+- [x] **Step 4: Full run + quality checks**
 
 ```bash
 cd consumers/rust && cargo fmt --check && cargo clippy --all-targets && cargo test
 cd ../.. && uv run tox -e all-checks && uv run pytest tests/test_consumers.py
 ```
 
-- [ ] **Step 5: Record Results row 10, finalize the Findings section (each finding:
+- [x] **Step 5: Record Results row 10, finalize the Findings section (each finding:
   divergence, pluto file:line, ladder cover or not, reported upstream or not),
   commit, and open the PR**
 

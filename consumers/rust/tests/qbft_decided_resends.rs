@@ -154,12 +154,14 @@ impl SomeMsg<TestTypes> for TestMsg {
     }
 }
 
-/// Runs a `qbft::run` instance on a background thread, feeds it the minimal
-/// justified message sequence pluto's own `broadcast_request_maps_protocol_fields`
-/// test uses (`crates/core/src/qbft/internal_test.rs`) to reach quorum
-/// PREPARE and quorum COMMIT at round 1, then confirms decision was actually
-/// reached before handing control back -- so a harness bug (failure to
-/// decide) can never be mistaken for a conformance result.
+/// Runs a `qbft::run` instance on a background thread and drives it to a
+/// round-1 decision: a justified PRE-PREPARE plus a quorum of PREPAREs,
+/// built the way pluto's own `broadcast_request_maps_protocol_fields` test
+/// (`crates/core/src/qbft/internal_test.rs`) builds them -- that test stops
+/// at the node's own COMMIT broadcast, so the quorum of external COMMITs
+/// that actually reaches DECIDED is this harness's own extension. Decision
+/// is then confirmed before handing control back -- so a harness bug
+/// (failure to decide) can never be mistaken for a conformance result.
 struct Harness {
     receive_tx: mpmc::Sender<Msg<TestTypes>>,
     decided_rx: mpmc::Receiver<()>,
@@ -251,9 +253,10 @@ fn spawn_decided_instance(nodes: i64, decided_round: i64) -> Harness {
     });
 
     // Minimal justified sequence to reach DECIDED at round 1: 1 PRE-PREPARE
-    // from the leader, a quorum of PREPAREs, then a quorum of COMMITs
-    // (mirrors `broadcast_request_maps_protocol_fields`,
-    // `crates/core/src/qbft/internal_test.rs`).
+    // from the leader and a quorum of PREPAREs (message construction as in
+    // pluto's `broadcast_request_maps_protocol_fields`,
+    // `crates/core/src/qbft/internal_test.rs`), then a quorum of COMMITs,
+    // which that test never sends -- it cancels at the node's own COMMIT.
     receive_tx
         .send(TestMsg::pre_prepare(leader, 1, VALUE))
         .expect("receive channel open");

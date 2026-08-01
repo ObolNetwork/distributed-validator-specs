@@ -394,7 +394,8 @@ fn qbft_consensus_msg_of_encoded_len(target_len: usize) -> pbconsensus::QbftCons
 /// `futures::io::Cursor` in-memory stream type.
 ///
 /// Matching on `err.to_string()` below is in tension with
-/// `test_vectors/README.md`'s "the slugs are the contract, wording is not":
+/// `test_vectors/README.md`'s rule that the slugs are the contract and the
+/// wording of an error message is not:
 /// it is unavoidable here because every rejection path in
 /// `read_protobuf_with_max_size` reports through the same `io::ErrorKind::InvalidData`
 /// with no structured reason code, and pluto's own `p2p.rs` tests assert the

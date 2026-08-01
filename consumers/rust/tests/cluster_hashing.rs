@@ -22,9 +22,11 @@ use spec_vectors_pluto::load_suite;
 /// Whoever sees this test go red after a pluto change should expect to find
 /// the *next* blocker, not assume the case now passes end to end — only after
 /// (1) and (2) both resolve does `all_empty_lists` belong back in the strict
-/// `definition_hashes` loop. See the cluster_hashing Results row / Findings
-/// entry for the full field list (a lower bound, not a total — later fields
-/// are never reached while an earlier one blocks parsing).
+/// `definition_hashes` loop. A layered probe confirmed (1) and (2) are the
+/// complete blocker set *for this case* (`name` and `deposit_amounts` are
+/// already handled), but charon `omitempty` fields this case does not
+/// exercise may hide more instances of the same root cause. See the
+/// cluster_hashing Results row / Findings entry.
 const DEFINITION_KNOWN_DIVERGENCE: &str = "all_empty_lists";
 
 /// `validator_without_deposit_data` is the lock-side counterpart: charon's
