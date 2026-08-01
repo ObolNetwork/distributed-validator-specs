@@ -119,7 +119,7 @@ Findings section.
 | `bls_threshold` | PASS (all 5 groups) |
 | `cluster_hashing` | **FAIL** — pluto rejects charon-legitimate JSON shapes (`operators: null`, an absent `partial_deposit_data`, and a masked third gap on `timestamp`) |
 | `priority_scoring` | PASS (18/18) |
-| `timer_deadlines` | `round_timeout_nanos` PASS **only with `ProposalTimeout` explicitly enabled** (9 PROPOSER/round-1 cases diverge under pluto's default config); `deadline_nanos` ABSENT-OK; `duty_start_delay_nanos` UNREACHABLE |
+| `timer_deadlines` | `round_timeout_nanos` PASS **only with `ProposalTimeout` explicitly enabled** (9 PROPOSER/round-1 cases diverge under pluto's default config — ABSENT-OK, ladder entry "Extended 1.5s proposer round-1 timeout (proposal_timeout)"); `deadline_nanos` ABSENT-OK; `duty_start_delay_nanos` UNREACHABLE |
 | `qbft_msg_limits` | `counts`: 5 MATCH + 6 ABSENT-OK; `wire_size`: 4/4 MATCH |
 | `qbft_decided_resends` | ABSENT-OK (pluto has no DECIDED-rebroadcast limiter) |
 | `parsigex_sender_binding` | `cases` ABSENT-OK; `peer_map` UNREACHABLE |

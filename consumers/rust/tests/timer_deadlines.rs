@@ -36,9 +36,11 @@
 //! So a default-configured pluto disagrees with the vectors on every
 //! `PROPOSER`/round-1 case (pluto: 1s; vectors: 1.5s), and that disagreement
 //! is the same class of gap as the `deadline_nanos` column below: a v1.9.0
-//! charon behaviour that postdates pluto's pin. `round_timeouts_pluto_default_feature_set`
-//! pins it explicitly instead of letting the enabled-feature test's PASS
-//! stand in for it.
+//! charon behaviour that postdates pluto's pin, ABSENT-OK against ladder
+//! entry "Extended 1.5s proposer round-1 timeout (proposal_timeout)"
+//! (`charon_anchor.json`, `first_charon_release: v1.9.0`).
+//! `round_timeouts_pluto_default_feature_set` pins it explicitly instead of
+//! letting the enabled-feature test's PASS stand in for it.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -160,8 +162,10 @@ async fn round_timeouts_pluto_default_feature_set() {
     // v1.7.1 parity (pluto's default) is 1s, not the vectors' 1.5s. See the
     // module doc comment ("Fix round 1") for why -- charon promoted
     // `ProposalTimeout` to enabled-by-default in v1.9.0 (#4296), after
-    // pluto's anchor. This must flip loudly (the `assert_eq!` below fails)
-    // the moment pluto's default configuration changes in either direction.
+    // pluto's anchor; ladder entry "Extended 1.5s proposer round-1 timeout
+    // (proposal_timeout)" covers it. This must flip loudly (the `assert_eq!`
+    // below fails) the moment pluto's default configuration changes in
+    // either direction.
     const PINNED_DEFAULT_PROPOSER_ROUND1_TIMEOUT: Duration = Duration::from_secs(1);
 
     let mut divergent_cases = 0usize;
