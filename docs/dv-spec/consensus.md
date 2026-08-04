@@ -66,7 +66,10 @@ leader_index = (duty.slot + duty.type + round) % n
 - On timeout, nodes trigger a round change and increment the round
 - Timer/backoff strategy does not affect safety, but must guarantee eventual progress
 - The default strategy is the *eager double linear* timer: round `r` lasts
-  `r` seconds, and the first deadline of each round is computed
+  `r` seconds — except round 1 of a proposer duty, which lasts 1.5 seconds
+  (block proposals need longer to fetch and agree on a value; see
+  `PROPOSAL_ROUND_TIMEOUT` in the reference implementation). The first
+  deadline of each round is computed
   deterministically from the chain (`genesis_time + slot * slot_duration +
   duty_start_delay + timeout`) rather than the local clock, so round
   boundaries — and hence leader election — stay aligned across all peers.

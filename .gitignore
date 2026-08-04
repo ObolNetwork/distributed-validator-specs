@@ -157,3 +157,5 @@ site/
 # Ruff
 .ruff_cache/
 
+# Pluto conformance validation reports (local artifacts, see .claude/skills/pluto-conformance)
+/reports/

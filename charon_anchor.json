@@ -84,6 +84,12 @@
       "spec": "docs/dv-spec/consensus.md"
     },
     {
+      "name": "Extended 1.5s proposer round-1 timeout (proposal_timeout)",
+      "first_charon_release": "v1.9.0",
+      "spec": "docs/dv-spec/consensus.md",
+      "note": "The behaviour itself is older (charon #3739) but sat behind the alpha proposal_timeout feature flag; v1.9.0 (charon #4296) enabled it by default. The timer_deadlines vectors assume it is enabled."
+    },
+    {
       "name": "Linear round timer subsequent-round timeout fix",
       "first_charon_release": null,
       "spec": "docs/dv-spec/consensus.md",

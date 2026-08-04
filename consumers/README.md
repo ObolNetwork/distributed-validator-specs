@@ -7,7 +7,7 @@ executes them: a suite nobody runs is a document, not a test.
 | Consumer | Status | Location |
 | --------------------------------- | ---------------------------------------------- | ----------- |
 | Charon (Go) | All 9 suites, 314 subtests, verified at anchor `6054bcb2` | [`go/`](go) |
-| Pluto (Rust) | Not written yet | — |
+| Pluto (Rust) | All 9 suites checked against pluto `67088a2` — 2 FAIL (`qbft_hashing`, `cluster_hashing`), rest PASS, ABSENT-OK, or UNREACHABLE; see plans/pluto-conformance.md | [rust/](rust) |
 
 These files live here rather than in Charon because this repository cannot merge
 into Charon. They are laid out to mirror Charon's own tree, so placing them is a
@@ -81,3 +81,45 @@ produced by Charon and then published, so a failure means Charon has moved away
 from the protocol every other implementation was told to implement. The
 regeneration path is deliberately not automatic — see the spec's
 `test_vectors/README.md`.
+
+## Pluto consumer
+
+`rust/` is a standalone Cargo package that path-depends on a pluto checkout
+placed as a sibling of this repository (`../pluto` relative to
+`distributed-validator-specs/`, i.e. `../../../pluto` from `consumers/rust/`).
+Unlike the Go consumer, nothing is copied into pluto and pluto is never
+modified — the harness reads pluto's crates in place.
+
+### Running it
+
+```bash
+# pluto checked out as a sibling of this repo (default: ../pluto)
+cd consumers/rust && cargo test
+```
+
+Vectors are read from `../../test_vectors/` at test time (no vendoring), or
+from `SPEC_VECTORS_DIR` when set (same variable as the Go consumer), for
+running against an unreleased build without moving files around.
+
+### Verdicts
+
+All nine published suites were run against pluto commit `67088a2`. This is a
+snapshot of one pluto commit, not a continuously tracked target: `PASS` means
+pluto reproduced every case the vector covers at that commit; `ABSENT-OK` and
+`UNREACHABLE` are not passes — they record, respectively, a divergence excused
+by pluto's charon-v1.7.1 parity pin, and a coverage gap where no public pluto
+API reaches the behaviour at all. Full per-case detail, findings, and pluto
+file:line citations are in `plans/pluto-conformance.md`'s Results table and
+Findings section.
+
+| Suite | Verdict |
+| --- | --- |
+| `secp256k1_signatures` | PASS (2/2) |
+| `qbft_hashing` | **FAIL** — 23/25 cases agree; 2 pinned divergences (prost omits default-valued protobuf map-entry key/value fields that charon's Go marshaler always emits) |
+| `bls_threshold` | PASS (all 5 groups) |
+| `cluster_hashing` | **FAIL** — pluto rejects charon-legitimate JSON shapes (`operators: null`, an absent `partial_deposit_data`, and a masked third gap on `timestamp`) |
+| `priority_scoring` | PASS (18/18) |
+| `timer_deadlines` | `round_timeout_nanos` PASS **only with `ProposalTimeout` explicitly enabled** (9 PROPOSER/round-1 cases diverge under pluto's default config — ABSENT-OK, ladder entry "Extended 1.5s proposer round-1 timeout (proposal_timeout)"); `deadline_nanos` ABSENT-OK; `duty_start_delay_nanos` UNREACHABLE |
+| `qbft_msg_limits` | `counts`: 5 MATCH + 6 ABSENT-OK; `wire_size`: 4/4 MATCH |
+| `qbft_decided_resends` | ABSENT-OK (pluto has no DECIDED-rebroadcast limiter) |
+| `parsigex_sender_binding` | `cases` ABSENT-OK; `peer_map` UNREACHABLE |

@@ -1,13 +1,14 @@
 """Guard the consumer suites in `consumers/` against drift from this repo.
 
-The Go code is not compiled here — it compiles inside a Charon checkout — so
-nothing else in this repository notices when it goes stale. The failure that
-matters is silent: adding a vector suite leaves the Go side unaware of it, and
-Charon keeps passing while covering less than it claims.
+The Go and Rust code are not compiled here — the Go side compiles inside a
+Charon checkout, and the Rust side path-depends on a pluto checkout — so
+nothing else in this repository notices when either goes stale. The failure
+that matters is silent: adding a vector suite leaves a consumer unaware of it,
+and it keeps passing while covering less than it claims.
 
-Charon's own `TestEverySuiteIsCovered` catches the same drift, but only for
-whoever runs it in a Charon checkout. These tests catch it here, where the suite
-is added.
+Charon's own `TestEverySuiteIsCovered` and pluto consumer's `every_suite_is_covered`
+catch the same drift, but only for whoever runs them in the respective checkout.
+These tests catch it here, where the suite is added.
 """
 
 from __future__ import annotations
@@ -21,12 +22,18 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONSUMERS = REPO_ROOT / "consumers"
 LOADER = CONSUMERS / "go" / "testutil" / "specvectors" / "specvectors.go"
+RUST_COVERAGE_GUARD = CONSUMERS / "rust" / "tests" / "coverage.rs"
 VECTOR_ROOT = REPO_ROOT / "test_vectors"
 
 
 @pytest.fixture(scope="module")
 def loader_source() -> str:
     return LOADER.read_text()
+
+
+@pytest.fixture(scope="module")
+def rust_coverage_source() -> str:
+    return RUST_COVERAGE_GUARD.read_text()
 
 
 def covered_suites(source: str) -> set[str]:
@@ -74,3 +81,26 @@ def test_every_go_file_is_placed_under_a_charon_package_path() -> None:
         assert relative.parts[0] in {"core", "dkg", "testutil"}, (
             f"{relative} is not under a known Charon top-level directory"
         )
+
+
+def rust_covered_suites(source: str) -> dict[str, str]:
+    """Parse the suite -> test file pairs out of the Rust guard's COVERED table."""
+    block = re.search(r"const COVERED: &\[\(&str, &str\)\] = &\[(.*?)\n\];", source, re.DOTALL)
+    assert block, "COVERED table not found in consumers/rust/tests/coverage.rs"
+
+    pairs = re.findall(r'\(\s*"([a-z0-9_]+)"\s*,\s*"([^"]+)"\s*,?\s*\)', block.group(1))
+    return dict(pairs)
+
+
+def test_rust_consumer_covers_every_suite(rust_coverage_source: str) -> None:
+    published = {path.stem for path in VECTOR_ROOT.glob("*.json")}
+
+    assert set(rust_covered_suites(rust_coverage_source)) == published
+
+
+def test_rust_consumer_declared_test_files_exist(rust_coverage_source: str) -> None:
+    # The Rust code is not compiled here, so a stale entry in COVERED — pointing
+    # at a renamed or deleted test file — would otherwise go unnoticed.
+    for suite, relative_file in rust_covered_suites(rust_coverage_source).items():
+        path = CONSUMERS / "rust" / relative_file
+        assert path.exists(), f"{suite}: declared test file {relative_file} does not exist"
