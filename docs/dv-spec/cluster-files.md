@@ -62,7 +62,7 @@ The cluster definition file defines the intended cluster configuration before ke
 - `fork_version`: Network identifier (e.g., mainnet: `0x00000000`, hoodi: `0x10000910`, sepolia: `0x90000069`)
 - `definition_hash`: SSZ hash used to confirm no ambiguity between definitions
 - `config_hash`: Hash of the static (non-changing) fields
-- `deposit_amounts`: List of partial deposit amounts in gwei. Each amount must be at least 1 ETH (1000000000 gwei). Individual deposits are limited to 32 ETH for standard validators or 2048 ETH for compounding validators (those using 0x02 withdrawal credentials per EIP-7251). Charon enforces these limits and validates compounding flag.
+- `deposit_amounts`: List of partial deposit amounts in gwei. Each amount must be at least 1 ETH (1000000000 gwei). Individual deposits are limited to 32 ETH for standard validators or 2048 ETH for compounding validators (those using 0x02 withdrawal credentials per EIP-7251). A non-empty list must sum to at least 32 ETH (repetition is allowed). Empty means Charon's default amounts; see [Validation Rules](#validation-rules).
 - `consensus_protocol`: Consensus protocol name (e.g., "qbft").
 - `target_gas_limit`: Target block gas limit for the cluster.
 - `compounding`: Boolean flag for compounding rewards (0x02 withdrawal credentials).
@@ -206,9 +206,13 @@ other implementation agrees with.
   Charon types several of these fields as signed Go ints and casts with
   `uint64(...)`, so a negative value in a file hashes as its two's-complement
   wrapping there; this spec rejects such a file at validation instead.
-- **BytesN** is **left**-padded to N bytes if shorter, then written as below. An
-  absent 65-byte signature therefore hashes exactly as an all-zero one, which is
-  what lets an unsigned definition and a zero-signature definition agree.
+- **BytesN** must be exactly N bytes. The one exception is a field that may be
+  **absent** (see [Validation Rules](#validation-rules)): written as the empty
+  string, it hashes as N zero bytes. An absent 65-byte signature therefore hashes
+  exactly as an all-zero one, which is what lets an unsigned definition and a
+  zero-signature definition agree. Charon left-pads *any* short value, not only
+  an empty one, so a malformed field hashes like a padded one there and every
+  signature over the hash still verifies; a reader MUST reject it instead.
 - A byte string of **32 bytes or fewer** occupies one chunk, right-padded. A
   longer one is right-padded to a chunk multiple and **merkleized** into a single
   chunk: a 48-byte public key contributes `sha256(bytes[0:32] || bytes[32:48]
@@ -234,11 +238,12 @@ other implementation agrees with.
   capacity's depth, or the zero chunk if the capacity is a single leaf.
 
 Two details are quirks of Charon's implementation rather than consequences of the
-rules, and both are normative because the hashes depend on them:
+rules:
 
 - `BuilderRegistration.Message.FeeRecipient` is written without a fixed length, so
-  unlike every other address in a cluster file a short value is right-padded
-  rather than left-padded.
+  unlike every other fixed field Charon right-pads a short value rather than
+  left-padding it. It must be exactly 20 bytes, at which length both paddings
+  agree; a short value is rejected, not padded either way.
 - Every empty list in a file Charon wrote appears as JSON `null`, because Go
   marshals a nil slice that way. A reader MUST treat `null` and `[]` alike.
 
@@ -247,6 +252,63 @@ See the Python reference implementation:
 for the hasher, [`dv_spec.cluster.hashing`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/cluster/hashing.py)
 for the three walks, and [`dv_spec.cluster`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/cluster/definition.py)
 for the data model.
+
+### Validation Rules
+
+A reader MUST apply these rules when it parses a cluster file, before computing
+any hash. Each is a rule a malformed file can break without changing a single
+hash or signature, because SSZ hashing pads short fixed-size fields and Charon
+decodes addresses without regard to case — so the hashes and signatures cannot
+be relied on to catch it.
+
+**Fixed-size fields have exactly their size.**
+
+| Field | Size | May be absent (empty) |
+| ----- | ---- | --------------------- |
+| `fork_version` | 4 | no |
+| `config_hash`, `definition_hash`, `lock_hash` | 32 | until computed; verification then fails |
+| operator `config_signature`, `enr_signature`; creator `config_signature` | 65 | yes, before signatures are collected |
+| operator and creator `address` | 20 (address rules) | yes, `charon create cluster` sets neither |
+| validator `fee_recipient_address`, `withdrawal_address` | 20 (address rules) | no |
+| `distributed_public_key`, `public_shares[]` | 48 | no |
+| deposit `pubkey` | 48 | no |
+| deposit `withdrawal_credentials` | 32 | no |
+| deposit `signature` | 96 | no |
+| registration `fee_recipient` | 20 | no |
+| registration `pubkey` | 48 | no |
+| registration `signature` | 96 | no |
+
+"Absent" means the empty string and nothing else: a field one byte short is
+malformed, not absent. `signature_aggregate` (96 bytes) and `node_signatures`
+(65 bytes each) are not covered by the lock hash, so padding cannot disguise them,
+and Charon's own v1.10 regression fixture carries placeholders of other lengths;
+their lengths are checked when they are verified.
+
+**Addresses** are `0x` followed by exactly 40 hex digits. All-lowercase and
+all-uppercase digits are accepted as written; mixed case is an EIP-55 checksum
+and MUST be correct. A wrong checksum is most likely a typo, which is what the
+checksum exists to catch.
+
+**The zero address is a valid address**, for a validator's
+`fee_recipient_address` or `withdrawal_address` as for any other, on every
+network. A reader MUST NOT reject a file for using it: deployed mainnet clusters
+use a zero withdrawal address deliberately. Tooling that creates clusters may
+refuse it as policy — Charon's `create dkg` refuses a zero withdrawal address on
+mainnet and Gnosis Chain — but that is out of scope for file validity.
+
+**Deposit amounts.** Each of `deposit_amounts` is at least 1 ETH and at most
+32 ETH, or 2048 ETH when `compounding` is set, and a non-empty list sums to at
+least 32 ETH — repetition is allowed, so `[16 ETH, 16 ETH]` is valid and
+`[1 ETH]` is not. This is Charon's `VerifyDepositAmounts`, which it applies when
+it parses a definition. An empty `deposit_amounts` means
+Charon's defaults, which both its DKG and `create cluster` use from v1.8 on:
+1 ETH and 32 ETH, or 1, 8, 32 and 256 ETH when compounding.
+
+**Withdrawal credentials** are derived, never chosen: for validator `i`, they are
+`0x01` (or `0x02` when `compounding`), eleven zero bytes, and the 20 bytes of the
+definition's `withdrawal_address` for validator `i`. A `0x00` (BLS) prefix, a bare
+address, the wrong prefix for the definition's `compounding` flag, or non-zero
+padding are all wrong, and the deposit contract would accept every one of them.
 
 ### Definition Hash Computation
 
@@ -318,7 +380,7 @@ SSZ Merkleize of:
 
 **Important Notes:**
 
-- Bytes20 fields (addresses): Parse from 0x-prefixed hex string to raw 20 bytes. An empty string decodes to no bytes and is then left-padded to 20 zero bytes, so an absent address hashes as the zero address
+- Bytes20 fields (addresses): Parse from 0x-prefixed hex string to raw 20 bytes, under the address rules in [Validation Rules](#validation-rules). Operator and creator addresses may be absent: an empty string hashes as 20 zero bytes, so an absent address hashes as the zero address. Validator addresses may not
 - Bytes4 (fork_version): Use raw 4 bytes
 - ByteList fields: UTF-8 encode strings, then hash as a byte list of the stated capacity, mixing in the byte length
 - CompositeList: merkleize each element to one chunk, then merkleize the list to its declared capacity and mix in the number of elements present
@@ -351,7 +413,7 @@ SSZ Merkleize of:
           Field 3: Signature (Bytes96)
       Field 3: BuilderRegistration (Composite)
         Field 0: Message (Composite)
-          Field 0: FeeRecipient (raw bytes, right-padded if short — see SSZ Hashing Rules)
+          Field 0: FeeRecipient (Bytes20 — see SSZ Hashing Rules)
           Field 1: GasLimit (uint64)
           Field 2: Timestamp (uint64) - Unix timestamp
           Field 3: PubKey (Bytes48)
@@ -509,7 +571,28 @@ attests to a different cluster than the one it describes.
    that share for one of the first. A single corrupted extra share would otherwise
    go unnoticed until that node's partial signatures started failing in
    production.
-4. Verify `signature_aggregate` and every entry of `node_signatures` over the
+4. Check every validator's deposit data. Validator `i` is paired with the
+   definition's validator address entry `i`, and the lock MUST have exactly one
+   validator per entry. For each deposit, in order:
+    1. `pubkey` equals the validator's `distributed_public_key`.
+    2. `withdrawal_credentials` equal the credentials derived from the
+       validator's withdrawal address (see [Validation Rules](#validation-rules)).
+    3. `amount` is one of `deposit_amounts`, or of the default amounts if that is
+       empty.
+    4. `amount` is within the bounds for the credential type.
+    5. `signature` verifies under the group public key over
+       `compute_signing_root(DepositMessage(pubkey, withdrawal_credentials, amount),
+       compute_domain(DOMAIN_DEPOSIT, fork_version, ZERO_ROOT))`, where
+       `DOMAIN_DEPOSIT` is `0x03000000` and the genesis validators root is all
+       zeros, exactly as the consensus spec signs deposits.
+5. Check every validator's builder registration, in order:
+    1. `message.pubkey` equals the validator's `distributed_public_key`.
+    2. `message.fee_recipient` equals the validator's `fee_recipient_address`.
+    3. `signature` verifies under the group public key over
+       `compute_signing_root(ValidatorRegistrationV1(message),
+       compute_domain(DOMAIN_APPLICATION_BUILDER, fork_version, ZERO_ROOT))`, where
+       `DOMAIN_APPLICATION_BUILDER` is `0x00000001`.
+6. Verify `signature_aggregate` and every entry of `node_signatures` over the
    recomputed `lock_hash`.
 
 Neither signature set is covered by the lock hash, which spans only the definition
@@ -517,9 +600,16 @@ and the validators. Editing any covered field after signing therefore changes th
 lock hash and invalidates both signature sets, which is the property that makes
 this sequence worth performing.
 
-Charon additionally verifies each pre-generated builder registration — the fee
-recipient against the definition and the signature against the group key. Those
-signatures are beacon chain domain-separated and are out of scope here.
+The signature aggregate attests that the DKG participants agreed on the lock —
+including whatever its deposit data says. It does not attest that the deposit
+data matches the definition, which is why steps 4 and 5 exist: deposit data with
+wrong credentials is signed, aggregated and node-signed exactly like correct
+deposit data.
+
+Charon at the anchor verifies builder registrations, but over a message it
+rebuilds from the definition rather than the one in the file, and does not
+verify deposit data at all. Step 5's field comparisons close the first gap; step
+4 closes the second.
 
 See the Python reference implementation:
 [`dv_spec.cluster.verification`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/src/dv_spec/cluster/verification.py).
@@ -540,8 +630,19 @@ Two cases are worth reading before the others. `signed_single_operator` is
 is the property the config hash exists for. `real_keys_3_of_4` is a lock with a
 real 3-of-4 BLS sharing — the same sharing
 [`test_vectors/bls_threshold.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/bls_threshold.json)
-pins — with a real signature aggregate and real node signatures, so the whole
-verification sequence above can be run against it.
+pins — with a real signature aggregate and real node signatures. Its deposit data
+and builder registration carry placeholder signatures and do not match its
+definition, so it passes steps 1–3 and 6 of the verification sequence but not 4
+and 5; only its hashes are meaningful for those.
+
+[`test_vectors/cluster_validation.json`](https://github.com/ObolNetwork/distributed-validator-specs/blob/main/test_vectors/cluster_validation.json)
+pins the [Validation Rules](#validation-rules) and the whole verification
+sequence: valid definitions and locks that MUST be accepted, and malformed ones
+that MUST be rejected, each naming the rule that rejects it. Every rejected case
+breaks exactly one rule, and those with malformed lengths or addresses are hashed
+and signed over the value a padding, case-insensitive reader would decode — so a
+reader that pads instead of rejecting finds every hash and signature in them
+valid.
 
 ## Implementation Notes
 
@@ -561,7 +662,7 @@ verification sequence above can be run against it.
 
 **Signature Formats**:
 
-- BLS signatures: 96 bytes (BLS12-381 G1 compressed)
+- BLS signatures: 96 bytes (BLS12-381 G2 compressed)
 - secp256k1 signatures: 65 bytes (R || S || V format where V ∈ {0, 1})
 - ETH1 addresses: 20 bytes, displayed as 0x-prefixed hex in JSON
 

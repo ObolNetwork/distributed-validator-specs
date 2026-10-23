@@ -14,6 +14,18 @@ builder registration — and is attested to twice over:
 Neither signature is covered by the lock hash, which spans only the definition
 and the validators. See `hashing.py`.
 
+Every byte field the lock hash covers has a fixed length, and parsing rejects
+any other length: public keys and shares 48 bytes, withdrawal credentials 32,
+BLS signatures 96, the registration fee recipient 20. None of them may be
+absent. SSZ hashing pads a short fixed-size field, so without this a lock could
+carry, say, a bare 20-byte address as withdrawal credentials and still hash and
+verify exactly like a lock carrying the padded value.
+
+`signature_aggregate` and `node_signatures` are not covered by the lock hash, so
+padding cannot disguise them, and an unsigned lock legitimately leaves them
+empty. Their lengths are checked where they are verified
+(`dv_spec.cluster.verification`) rather than at parse.
+
 Scope
 -----
 - The v1.10.0 lock and its members, and their JSON form.
@@ -22,8 +34,6 @@ Out of scope
 ------------
 - ENR decoding, so verifying `node_signatures` needs each node's public key
   supplied separately.
-- Deposit message signing roots, which are beacon chain domain-separated and
-  specified upstream.
 """
 
 from __future__ import annotations
@@ -34,7 +44,14 @@ from pydantic import Field
 
 from dv_spec.cluster.definition import Definition, GoInt, Gwei, NullableList
 from dv_spec.types.base import StrictBaseModel
-from dv_spec.types.hex import HexBytes
+from dv_spec.types.hex import (
+    FixedHexBytes20,
+    FixedHexBytes32,
+    FixedHexBytes48,
+    FixedHexBytes96,
+    HexBytes,
+    OptionalHexBytes32,
+)
 
 PUBKEY_LENGTH = 48
 """Length of a compressed BLS12-381 G1 public key."""
@@ -53,12 +70,12 @@ class DepositData(StrictBaseModel):
     carries a list of these per validator rather than one.
     """
 
-    pubkey: HexBytes = Field(description="The distributed validator's group public key")
-    withdrawal_credentials: HexBytes = Field(
+    pubkey: FixedHexBytes48 = Field(description="The distributed validator's group public key")
+    withdrawal_credentials: FixedHexBytes32 = Field(
         description="32-byte withdrawal credentials included in the deposit",
     )
     amount: Gwei = Field(description="Amount in Gwei, written as a JSON string")
-    signature: HexBytes = Field(
+    signature: FixedHexBytes96 = Field(
         description="BLS signature of the deposit message by the group key",
     )
 
@@ -66,10 +83,10 @@ class DepositData(StrictBaseModel):
 class Registration(StrictBaseModel):
     """An unsigned builder registration message."""
 
-    fee_recipient: HexBytes = Field(description="20-byte fee recipient address")
+    fee_recipient: FixedHexBytes20 = Field(description="20-byte fee recipient address")
     gas_limit: GoInt = Field(description="Gas limit advertised to builders")
     timestamp: GoInt = Field(description="Registration time as a unix timestamp in seconds")
-    pubkey: HexBytes = Field(description="The distributed validator's group public key")
+    pubkey: FixedHexBytes48 = Field(description="The distributed validator's group public key")
 
 
 class BuilderRegistration(StrictBaseModel):
@@ -80,7 +97,7 @@ class BuilderRegistration(StrictBaseModel):
     """
 
     message: Registration = Field(description="The registration being signed")
-    signature: HexBytes = Field(description="BLS signature of the message by the group key")
+    signature: FixedHexBytes96 = Field(description="BLS signature of the message by the group key")
 
 
 class DistValidator(StrictBaseModel, populate_by_name=True, serialize_by_alias=True):
@@ -91,11 +108,11 @@ class DistValidator(StrictBaseModel, populate_by_name=True, serialize_by_alias=T
     write the key names Charon reads.
     """
 
-    pubkey: HexBytes = Field(
+    pubkey: FixedHexBytes48 = Field(
         alias="distributed_public_key",
         description="The validator's group public key, 48 bytes",
     )
-    pubshares: Annotated[List[HexBytes], NullableList] = Field(
+    pubshares: Annotated[List[FixedHexBytes48], NullableList] = Field(
         default_factory=list,
         alias="public_shares",
         description=(
@@ -129,7 +146,7 @@ class Lock(StrictBaseModel, populate_by_name=True, serialize_by_alias=True):
         alias="distributed_validators",
         description="The distributed validators the DKG produced",
     )
-    lock_hash: HexBytes = Field(
+    lock_hash: OptionalHexBytes32 = Field(
         default=b"",
         description="Hash of the definition and the validators; see `hashing.py`",
     )

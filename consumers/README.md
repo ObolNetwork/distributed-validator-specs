@@ -6,8 +6,8 @@ executes them: a suite nobody runs is a document, not a test.
 
 | Consumer | Status | Location |
 | --------------------------------- | ---------------------------------------------- | ----------- |
-| Charon (Go) | All 9 suites, 314 subtests, verified at anchor `6054bcb2` | [`go/`](go) |
-| Pluto (Rust) | All 9 suites checked against pluto `67088a2` — 2 FAIL (`qbft_hashing`, `cluster_hashing`), rest PASS, ABSENT-OK, or UNREACHABLE; see plans/pluto-conformance.md | [rust/](rust) |
+| Charon (Go) | The original 9 suites, 314 subtests, verified at anchor `6054bcb2`. `cluster_validation` is stricter than that anchor and is expected to fail there until Charon enforces its rules (see below) | [`go/`](go) |
+| Pluto (Rust) | The original 9 suites checked against pluto `67088a2` — 2 FAIL (`qbft_hashing`, `cluster_hashing`), rest PASS, ABSENT-OK, or UNREACHABLE; see plans/pluto-conformance.md. `cluster_validation` not yet run | [rust/](rust) |
 
 These files live here rather than in Charon because this repository cannot merge
 into Charon. They are laid out to mirror Charon's own tree, so placing them is a
@@ -28,7 +28,7 @@ loader plus in-package test files:
 | File | Package | Suites |
 | ----------------------------------------------------- | ---------------------- | ------ |
 | `testutil/specvectors/specvectors.go` | loader (importable) | — |
-| `testutil/specvectors/vectors_test.go` | external | `cluster_hashing`, `bls_threshold`, `secp256k1_signatures` |
+| `testutil/specvectors/vectors_test.go` | external | `cluster_hashing`, `cluster_validation`, `bls_threshold`, `secp256k1_signatures` |
 | `core/consensus/qbft/spec_vectors_internal_test.go` | `qbft` | `qbft_hashing` (duty, data sets, signing roots), `qbft_msg_limits` |
 | `core/priority/spec_vectors_internal_test.go` | `priority` | `qbft_hashing` (`any_string`), `priority_scoring` |
 | `dkg/spec_vectors_internal_test.go` | `dkg` | `parsigex_sender_binding` |
@@ -82,6 +82,26 @@ from the protocol every other implementation was told to implement. The
 regeneration path is deliberately not automatic — see the spec's
 `test_vectors/README.md`.
 
+`cluster_validation` is the exception: it specifies rules Charon does not yet
+enforce, so against the `6054bcb2`-era Charon `TestClusterValidation` fails, and
+that is the expected result until Charon adopts them. Run against Charon `main`
+at `cc6e1afa`, 22 of its 49 cases fail, all of them rejected cases Charon
+accepts (padded short fields, address case and checksum, and every deposit data
+rule); Charon accepts every accepted case. The Go test asserts only the verdict,
+not the reason slug.
+
+### Known gap: in-package consumers no longer compile against Charon `main`
+
+The files in `dkg/`, `core/consensus/timer/` and `core/qbft/` were written
+against the `6054bcb2` anchor and reach unexported Charon functions whose
+signatures have since changed on `main`: `verifyPeerShareIdx`,
+`linearRoundTimeout`, `NewDoubleEagerLinearRoundTimerWithDutyTimingAndClock`, and
+the QBFT decided callback. Placed into a current Charon checkout they do not
+compile, so `parsigex_sender_binding`, `timer_deadlines` and
+`qbft_decided_resends` cannot be run there until they are updated. They still
+build at the anchor. The `testutil/specvectors` files, which carry
+`cluster_hashing` and `cluster_validation`, are unaffected.
+
 ## Pluto consumer
 
 `rust/` is a standalone Cargo package that path-depends on a pluto checkout
@@ -123,3 +143,4 @@ Findings section.
 | `qbft_msg_limits` | `counts`: 5 MATCH + 6 ABSENT-OK; `wire_size`: 4/4 MATCH |
 | `qbft_decided_resends` | ABSENT-OK (pluto has no DECIDED-rebroadcast limiter) |
 | `parsigex_sender_binding` | `cases` ABSENT-OK; `peer_map` UNREACHABLE |
+| `cluster_validation` | Not yet run. Added after this snapshot; `tests/cluster_validation.rs` asserts accepted cases strictly and reports rejected cases pluto accepts as ABSENT-OK |

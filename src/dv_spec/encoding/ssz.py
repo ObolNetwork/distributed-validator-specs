@@ -345,23 +345,38 @@ def put_byte_list(walker: HashWalker, data: bytes, max_bytes: int, field: str) -
     walker.merkleize_with_mixin(start, len(data), (max_bytes + CHUNK_SIZE - 1) // CHUNK_SIZE)
 
 
-def put_bytes_n(walker: HashWalker, data: bytes, size: int, field: str) -> None:
+def put_bytes_n(
+    walker: HashWalker, data: bytes, size: int, field: str, *, absent_ok: bool = False
+) -> None:
     """Append a fixed-size byte vector as SSZ `BytesN`.
 
-    Short values are left-padded to `size`, matching Charon. Nothing in a
-    cluster file is legitimately short, so this padding is a compatibility
-    behaviour rather than an invariant to rely on.
+    The value must be exactly `size` bytes. Charon left-pads a short value and
+    some SSZ libraries truncate a long one, so a malformed value can hash like a
+    well-formed one and every signature over that hash still verifies; this
+    spec refuses both instead of reproducing either.
+
+    The single exception is absence. Some cluster file fields are legitimately
+    empty — an operator signature that has not been collected yet, or an
+    address `charon create cluster` never set — and Charon hashes an empty value
+    as `size` zero bytes. Callers opt in to that per field with `absent_ok`, and
+    only the empty value is accepted: one byte short is still an error.
 
     Args:
         walker: The walker to append to.
-        data: The bytes, at most `size` long.
+        data: The bytes: exactly `size` long, or empty if `absent_ok`.
         size: The vector's fixed length.
         field: Field name, used only in the error message.
+        absent_ok: Accept an empty value as absent, hashing it as all zeros.
 
     Raises:
-        ValueError: If `data` is longer than `size`.
+        ValueError: If `data` is neither `size` bytes long nor an allowed
+            absent value.
     """
-    if len(data) > size:
-        raise ValueError(f"{field} is {len(data)} bytes, over the fixed length of {size}")
+    if not data and absent_ok:
+        walker.put_bytes(bytes(size))
+        return
 
-    walker.put_bytes(data.rjust(size, b"\x00"))
+    if len(data) != size:
+        raise ValueError(f"{field} has the wrong length: {len(data)} bytes, expected {size}")
+
+    walker.put_bytes(data)

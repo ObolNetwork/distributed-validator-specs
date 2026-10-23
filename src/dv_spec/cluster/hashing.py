@@ -16,6 +16,14 @@ which fields the walk visits:
 All three are SSZ hash roots produced by walking the object field by field
 through `encoding.ssz.HashWalker`, mirroring Charon's `cluster/ssz.go`.
 
+Every fixed-size field must have exactly its size. Charon left-pads a short one
+(and hashes the builder registration's fee recipient right-padded), so a
+malformed value hashes like a padded one there; here it is an error. The fields
+a definition may leave absent — operator and creator addresses and signatures —
+are written as empty and hash as all zeros, which is the one case where this
+walk and Charon's padding agree by design. See `definition.py` for which fields
+those are.
+
 Only v1.10.0 is implemented, per the decision to target v1.10 while Charon moves
 to v1.11. For orientation, the neighbouring versions differ as follows: v1.9 has
 no `target_gas_limit` or `compounding` field, and v1.11 turns operator and creator
@@ -36,7 +44,6 @@ Out of scope
 from __future__ import annotations
 
 from dv_spec.cluster.definition import (
-    ADDRESS_LENGTH,
     FORK_VERSION_LENGTH,
     HASH_LENGTH,
     K1_SIGNATURE_LENGTH,
@@ -63,46 +70,33 @@ from dv_spec.cluster.lock import (
     Registration,
 )
 from dv_spec.encoding.ssz import HashWalker, put_byte_list, put_bytes_n
-from dv_spec.types.hex import decode_hex_bytes
+from dv_spec.types.address import ADDRESS_LENGTH, decode_address
 
 
-def decode_address(address: str) -> bytes:
-    """Decode a hex Ethereum address to bytes.
-
-    An empty string decodes to no bytes at all rather than to zeros, and the
-    caller left-pads it to 20 bytes. Charon does the same, so an absent address
-    and an all-zero address hash identically.
+def put_address(walker: HashWalker, address: str, field: str, *, absent_ok: bool = False) -> None:
+    """Append a hex Ethereum address as SSZ `Bytes20`.
 
     Args:
-        address: A 20-byte address as a hex string, with or without `0x`, or the
-            empty string.
-
-    Returns:
-        The decoded bytes, empty if `address` was empty.
+        walker: The walker to append to.
+        address: The address string; see `dv_spec.types.address`.
+        field: Field name, used only in the error message.
+        absent_ok: Accept the empty string as an absent address, hashed as 20
+            zero bytes. Charon does the same, so an absent address and the zero
+            address hash identically.
 
     Raises:
-        ValueError: If the string is not valid hex, or decodes to a length other
-            than 20 bytes.
+        ValueError: If the address is malformed, or empty when not `absent_ok`.
     """
-    if not address:
-        return b""
+    if not address and absent_ok:
+        put_bytes_n(walker, b"", ADDRESS_LENGTH, field, absent_ok=True)
+        return
 
     try:
-        raw: bytes = decode_hex_bytes(address)
+        raw = decode_address(address)
     except ValueError as exc:
-        raise ValueError(f"invalid address {address!r}: {exc}") from exc
+        raise ValueError(f"{field}: {exc}") from exc
 
-    if len(raw) != ADDRESS_LENGTH:
-        raise ValueError(
-            f"address {address!r} decodes to {len(raw)} bytes, expected {ADDRESS_LENGTH}"
-        )
-
-    return raw
-
-
-def put_address(walker: HashWalker, address: str, field: str) -> None:
-    """Append a hex Ethereum address as SSZ `Bytes20`."""
-    put_bytes_n(walker, decode_address(address), ADDRESS_LENGTH, field)
+    put_bytes_n(walker, raw, ADDRESS_LENGTH, field)
 
 
 def hash_definition_v1x10(walker: HashWalker, definition: Definition, *, config_only: bool) -> None:
@@ -130,24 +124,37 @@ def hash_definition_v1x10(walker: HashWalker, definition: Definition, *, config_
     operators_start = walker.index()
     for operator in definition.operators:
         operator_start = walker.index()
-        put_address(walker, operator.address, "operator address")
+        put_address(walker, operator.address, "operator address", absent_ok=True)
         if not config_only:
             put_byte_list(walker, operator.enr.encode(), MAX_ENR_BYTES, "enr")
-            put_bytes_n(walker, operator.config_signature, K1_SIGNATURE_LENGTH, "config_signature")
-            put_bytes_n(walker, operator.enr_signature, K1_SIGNATURE_LENGTH, "enr_signature")
+            put_bytes_n(
+                walker,
+                operator.config_signature,
+                K1_SIGNATURE_LENGTH,
+                "config_signature",
+                absent_ok=True,
+            )
+            put_bytes_n(
+                walker,
+                operator.enr_signature,
+                K1_SIGNATURE_LENGTH,
+                "enr_signature",
+                absent_ok=True,
+            )
 
         walker.merkleize(operator_start)
 
     walker.merkleize_with_mixin(operators_start, len(definition.operators), MAX_OPERATORS)
 
     creator_start = walker.index()
-    put_address(walker, definition.creator.address, "creator address")
+    put_address(walker, definition.creator.address, "creator address", absent_ok=True)
     if not config_only:
         put_bytes_n(
             walker,
             definition.creator.config_signature,
             K1_SIGNATURE_LENGTH,
             "creator config_signature",
+            absent_ok=True,
         )
 
     walker.merkleize(creator_start)
@@ -171,7 +178,9 @@ def hash_definition_v1x10(walker: HashWalker, definition: Definition, *, config_
     walker.put_bool(definition.compounding)
 
     if not config_only:
-        put_bytes_n(walker, definition.config_hash, HASH_LENGTH, "config_hash")
+        # Absent until computed, as the model allows; `verify_definition_hashes`
+        # rejects a file whose stored config hash is absent or wrong.
+        put_bytes_n(walker, definition.config_hash, HASH_LENGTH, "config_hash", absent_ok=True)
 
     walker.merkleize(start)
 
@@ -194,9 +203,10 @@ def hash_deposit_data(walker: HashWalker, deposit: DepositData) -> None:
 def hash_registration(walker: HashWalker, registration: Registration) -> None:
     """Walk a builder registration message, leaving its hash root as one chunk."""
     start = walker.index()
-    # Charon appends the fee recipient without a fixed length, so unlike every
-    # other address in a cluster file a short value is right-padded, not left.
-    walker.put_bytes(registration.fee_recipient)
+    # Charon appends this one field with PutBytes rather than a fixed length, so
+    # a short value would be right-padded there. A 20-byte value hashes the same
+    # either way, and that is the only length accepted.
+    put_bytes_n(walker, registration.fee_recipient, ADDRESS_LENGTH, "registration fee_recipient")
     walker.put_uint64(registration.gas_limit)
     walker.put_uint64(registration.timestamp)
     put_bytes_n(walker, registration.pubkey, PUBKEY_LENGTH, "registration pubkey")

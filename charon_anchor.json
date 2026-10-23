@@ -118,6 +118,12 @@
       "first_charon_release": null,
       "spec": "docs/dv-spec/parsigex.md",
       "note": "Unreleased on Charon main. Rejects only partial signatures no honest peer sends."
+    },
+    {
+      "name": "Strict cluster file validation (fixed-length fields, address checksums, lock deposit data and builder registrations)",
+      "first_charon_release": null,
+      "spec": "docs/dv-spec/cluster-files.md",
+      "note": "Not in Charon main at this anchor; Charon accepts most of the cluster_validation suite's rejected cases. Rejects only files Charon's DKG never writes."
     }
   ],
   "behaviours_note": "Specified behaviours that postdate Charon v1.7.1, the release Pluto pins. first_charon_release names the first final Charon release; it is null for behaviour no final release carries, whether it exists only on main or in release candidates — the entry's note says which. This is the machine-readable form of the compatibility table in README.md, and it is what release manifests carry so a consumer pinning a spec release can tell which parts apply to the Charon it runs against."
