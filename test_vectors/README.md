@@ -21,6 +21,7 @@ a passing suite means "agrees with Charon" rather than "agrees with this spec".
 | `qbft_msg_limits.json`      | Justification, value and wire-size limits on an incoming consensus message, and which limit fires   | spec    |
 | `qbft_decided_resends.json` | Which post-decision ROUND-CHANGE events may trigger a `DECIDED` rebroadcast                         | charon  |
 | `parsigex_sender_binding.json` | Binding a claimed share index to the authenticated sender, and peer map validation               | charon  |
+| `cluster_validation.json`   | Which cluster definitions and locks must be accepted or rejected: field lengths, addresses, deposit data, builder registrations | spec    |
 
 The suites chain where the protocol does. The digest signed in
 `secp256k1_signatures.json` is the QBFT signing root derived in
@@ -50,7 +51,7 @@ those are the cases most likely to catch a bug, so start there when debugging.
 
 ## Rejection cases
 
-The last three suites are **negative**: they pin what an implementation must
+The last four suites are **negative**: they pin what an implementation must
 *refuse*, not what it must compute. Every other suite passes by producing a
 value, which leaves the reject rules unpinned — an implementation can pass all of
 them while accepting a 128 MiB consensus message or a partial signature deposited
@@ -62,8 +63,9 @@ Cases in these suites carry:
 - `accepted` — whether the input must be accepted.
 - `reason` — `null` when accepted, otherwise a stable slug naming the rule that
   fired: `too_many_justifications`, `too_many_values`, `msg_too_large`,
-  `share_idx_mismatch`, `unknown_peer`, `missing_share_idx`. The slugs are the
-  contract; the wording of an error message is not.
+  `share_idx_mismatch`, `unknown_peer`, `missing_share_idx`, and the cluster
+  file rules listed below. The slugs are the contract; the wording of an error
+  message is not.
 
 Two conventions are worth knowing:
 
@@ -82,7 +84,33 @@ event `i` triggers a rebroadcast. Replay the events in order against one instanc
 Counts are rebroadcast *events*, not messages, since one rebroadcast reaches every
 peer.
 
-`cluster_hashing` is the one exception to the hex convention, and deliberately:
+`cluster_validation` holds whole cluster files. Each `definition` case is
+accepted if it parses under the field rules and its stored hashes verify; each
+`lock` case if it parses and passes the full verification sequence of
+`dv_spec.cluster.verification.verify_lock`, with `node_pubkeys` standing in for
+the keys in the operators' ENRs. Its reason slugs are `invalid_length`,
+`invalid_address`, `bad_address_checksum`,
+`deposit_amount_out_of_range`, `deposit_amounts_sum_too_low`,
+`deposit_pubkey_mismatch`,
+`withdrawal_credentials_mismatch`, `deposit_amount_not_in_definition`,
+`invalid_deposit_signature`, `registration_pubkey_mismatch`,
+`registration_fee_recipient_mismatch` and `invalid_registration_signature`.
+Two properties make the suite bite:
+
+- **Every rejected case breaks exactly one rule.** Its hashes are recomputed,
+  and its signature aggregate, node signatures, deposit data and builder
+  registration re-signed with real keys, so there is nothing else to reject it
+  for.
+- **Malformed lengths and addresses are signed as a lenient reader sees them.**
+  A 20-byte `withdrawal_credentials` is hashed and signed as the 32 bytes
+  Charon's left-padding turns it into; a mis-checksummed address as the bytes it
+  decodes to. A reader that pads instead of rejecting finds every hash and
+  signature valid, so only the field rule itself rejects the file.
+  `tests/test_vectors.py` checks this by repairing each such case the lenient
+  way and verifying it.
+
+`cluster_hashing` and `cluster_validation` are the exceptions to the hex
+convention, and deliberately:
 each case's `input` is a verbatim Charon cluster file, so inside `input` the
 encoding is Charon's own — `0x` prefixed hex, Gwei amounts as JSON strings, and
 `null` for empty lists. Consuming these cases means parsing the real file format
@@ -143,12 +171,20 @@ lives in its own directory because they are all `package main`; side by side in
 one directory they would not compile. The cluster generator reads Charon's
 testdata by relative path, so it must be run from the checkout root.
 
+`cluster_validation.json` is `source: spec` and is **stricter than Charon at the
+anchor**: Charon accepts most of its rejected cases today. The keys are reused
+rather than invented — the BLS sharing from `bls_threshold.json`, and the
+operator ENRs and node keys from `cluster_hashing.json`'s `real_keys_3_of_4` lock
+— so its valid locks are verifiable by Charon from the ENRs alone. Charon at the
+anchor accepts every accepted case.
+
 Note that `cluster_hashing.json` records a `charon_ref` one commit ahead of the
 `2eb6798e` every other original suite records. That commit touches only
 `p2p/sender_test.go`, so `cluster/` is identical at both; the field records where
 the suite was actually generated rather than the repository's overall anchor. The
-three rejection suites record the current anchor (`6054bcb2`), which is where
-their tables were transcribed from.
+three Charon-transcribed rejection suites, and `cluster_validation.json`, record
+the current anchor (`6054bcb2`), which is where their tables were transcribed
+from or their rules compared against.
 
 `source: spec` means this spec computed the values from its reading of Charon's
 source. `timer_deadlines.json` is in this category: the deadlines are plain
@@ -160,7 +196,10 @@ arithmetic, but no Charon test exposes them as a table.
 uv run python scripts/generate_test_vectors.py
 ```
 
-This rewrites the `source: spec` suites and re-checks `priority_scoring.json`,
+This rewrites the `source: spec` suites (`cluster_validation.json` is built by
+`scripts/cluster_validation_vectors.py`, which fails if the spec's verdict or
+reason for any case differs from the one it was built for) and re-checks
+`priority_scoring.json`,
 `qbft_decided_resends.json` and `parsigex_sender_binding.json` against Charon's
 tables. It deliberately does not touch `qbft_hashing.json` or
 `cluster_hashing.json`, which require a Go toolchain and a Charon checkout — see
@@ -171,7 +210,7 @@ drifts from the implementation fails the normal test run.
 
 [`consumers/`](../consumers/README.md) holds the same suites wired into a real
 implementation. That is where a vector stops being a document: charon runs all
-nine of them across 314 subtests.
+of them.
 
 ## Units and precision
 

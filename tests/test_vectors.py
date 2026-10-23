@@ -25,6 +25,7 @@ from dv_spec.cluster.hashing import (
 )
 from dv_spec.cluster.lock import Lock
 from dv_spec.cluster.verification import (
+    verify_lock,
     verify_node_signatures,
     verify_pubshare_counts,
     verify_shares_reconstruct,
@@ -558,12 +559,130 @@ def test_parsigex_peer_map_validation(case: Dict[str, Any]) -> None:
         validate_exchange_peers(inputs["peers"], inputs["share_idx_by_peer"], inputs["peer_idx"])
 
 
+VALIDATION = "cluster_validation"
+
+# Reason slug -> the error text that identifies it. Restated here rather than
+# imported from the generator, so a renamed message breaks this test instead of
+# silently moving both sides.
+VALIDATION_REASONS = {
+    "invalid_length": "wrong length",
+    "invalid_address": "invalid address",
+    "bad_address_checksum": "bad address checksum",
+    "deposit_amount_out_of_range": "deposit amount out of range",
+    "deposit_amounts_sum_too_low": "deposit amounts sum to less than 32 ETH",
+    "deposit_pubkey_mismatch": "deposit pubkey mismatch",
+    "withdrawal_credentials_mismatch": "withdrawal credentials mismatch",
+    "deposit_amount_not_in_definition": "deposit amount not in definition",
+    "invalid_deposit_signature": "invalid deposit signature",
+    "registration_pubkey_mismatch": "registration pubkey mismatch",
+    "registration_fee_recipient_mismatch": "registration fee recipient mismatch",
+    "invalid_registration_signature": "invalid registration signature",
+}
+
+
+@pytest.mark.parametrize("case", cases(VALIDATION, "definition"))
+def test_cluster_definition_validation(case: Dict[str, Any]) -> None:
+    def check() -> None:
+        verify_definition_hashes(Definition.model_validate(case["input"]))
+
+    if case["accepted"]:
+        check()
+        return
+
+    with pytest.raises(ValueError, match=VALIDATION_REASONS[case["reason"]]):
+        check()
+
+
+@pytest.mark.parametrize("case", cases(VALIDATION, "lock"))
+def test_cluster_lock_validation(case: Dict[str, Any]) -> None:
+    node_pubkeys = [bytes.fromhex(pubkey) for pubkey in case["node_pubkeys"]]
+
+    def check() -> None:
+        verify_lock(Lock.model_validate(case["input"]), node_pubkeys)
+
+    if case["accepted"]:
+        check()
+        return
+
+    with pytest.raises(ValueError, match=VALIDATION_REASONS[case["reason"]]):
+        check()
+
+
+# Fixed-size hex fields of a cluster file, by key, and the padding a lenient
+# reader applies to a short value. Every other fixed field is left-padded.
+FIXED_FIELDS = {
+    "fork_version": 4,
+    "config_signature": 65,
+    "enr_signature": 65,
+    "distributed_public_key": 48,
+    "public_shares": 48,
+    "pubkey": 48,
+    "withdrawal_credentials": 32,
+    "signature": 96,
+    "fee_recipient": 20,
+}
+ADDRESS_FIELDS = {"address", "fee_recipient_address", "withdrawal_address"}
+
+
+def leniently(data: Any, key: str = "") -> Any:
+    """Repair a cluster file the way a reader that pads instead of rejecting does."""
+    if isinstance(data, dict):
+        return {name: leniently(value, name) for name, value in data.items()}
+    if isinstance(data, list):
+        return [leniently(value, key) for value in data]
+    if not isinstance(data, str):
+        return data
+
+    if key in ADDRESS_FIELDS:
+        digits = data.removeprefix("0x").lower()
+        return "0x" + digits.rjust(40, "0") if digits or key != "address" else data
+
+    size = FIXED_FIELDS.get(key)
+    if size is None or not data:
+        return data
+
+    digits = data.removeprefix("0x")[: 2 * size]
+    padded = digits.ljust(2 * size, "0") if key == "fee_recipient" else digits.rjust(2 * size, "0")
+    return "0x" + padded
+
+
+def lenient_cases(group: str) -> List[Any]:
+    rejected = ("invalid_length", "invalid_address", "bad_address_checksum")
+    return [
+        pytest.param(case, id=case["name"])
+        for case in load(VALIDATION)[group]
+        if case["reason"] in rejected
+    ]
+
+
+@pytest.mark.parametrize("case", lenient_cases("definition"))
+def test_malformed_definitions_hash_validly_when_padded(case: Dict[str, Any]) -> None:
+    # The point of these cases: a reader that pads short fields, truncates long
+    # ones and ignores address case finds the file's hashes correct, so only the
+    # field rules themselves can reject it.
+    verify_definition_hashes(Definition.model_validate(leniently(case["input"])))
+
+
+@pytest.mark.parametrize("case", lenient_cases("lock"))
+def test_malformed_locks_hash_and_sign_validly_when_padded(case: Dict[str, Any]) -> None:
+    lock = Lock.model_validate(leniently(case["input"]))
+    node_pubkeys = [bytes.fromhex(pubkey) for pubkey in case["node_pubkeys"]]
+
+    verify_lock_hash(lock)
+    assert verify_node_signatures(lock, node_pubkeys)
+    # A padded public share is not a curve point, so the aggregate cannot be
+    # checked for that one case; the lock hash and node signatures still bind it.
+    if case["name"] != "pubshare_47_bytes":
+        assert verify_signature_aggregate(lock)
+
+
 def test_rejection_suites_carry_both_verdicts() -> None:
     # A suite that drifted to all-accept or all-reject would still pass every case
     # above while testing nothing, so pin that each carries both.
     for suite, groups in (
         (LIMITS, ("counts", "wire_size")),
         (BINDING, ("cases", "peer_map")),
+        (VALIDATION, ("definition", "lock")),
     ):
         loaded = load(suite)
         for group in groups:

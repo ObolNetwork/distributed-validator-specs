@@ -21,6 +21,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from cluster_validation_vectors import VectorGenerationError, cluster_validation
+
 from dv_spec.subspecs.consensus.cryptography import hash_value
 from dv_spec.subspecs.consensus.qbft.definition import Definition
 from dv_spec.subspecs.consensus.qbft.message import (
@@ -67,7 +69,7 @@ def write(suite: str, data: Dict[str, Any]) -> None:
 
 
 def require(condition: bool, message: str) -> None:
-    """Abort generation when the spec disagrees with Charon's tables.
+    """VectorGenerationError generation when the spec disagrees with Charon's tables.
 
     Not `assert`: the provenance notes promise this script fails on any
     disagreement, and `python -O` strips asserts silently — the vectors would
@@ -635,6 +637,11 @@ def main() -> None:
         "qbft_decided_resends": qbft_decided_resends(),
         "parsigex_sender_binding": parsigex_sender_binding(),
     }
+    try:
+        suites["cluster_validation"] = cluster_validation(REJECTION_CHARON_REF)
+    except VectorGenerationError as error:
+        raise SystemExit(f"refusing to generate vectors: {error}") from error
+
     for name, data in suites.items():
         write(name, data)
 

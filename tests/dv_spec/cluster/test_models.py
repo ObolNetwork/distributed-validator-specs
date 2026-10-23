@@ -222,3 +222,192 @@ def test_models_are_immutable() -> None:
 
     with pytest.raises(ValidationError, match="frozen"):
         validator.pubkey = b""  # type: ignore[misc]
+
+
+# --- field rules --------------------------------------------------------------
+
+
+def definition_with(**changes: object) -> dict[str, object]:
+    return MINIMAL_DEFINITION | changes
+
+
+@pytest.mark.parametrize("fork_version", ["0x900000", "0x9000006900", ""])
+def test_fork_version_must_be_four_bytes(fork_version: str) -> None:
+    with pytest.raises(ValidationError, match="wrong length"):
+        Definition.model_validate(definition_with(fork_version=fork_version))
+
+
+@pytest.mark.parametrize("length", [1, 64, 66])
+def test_signatures_must_be_65_bytes_when_present(length: int) -> None:
+    operator = {"address": "0x" + "11" * 20, "config_signature": "0x" + "ab" * length}
+
+    with pytest.raises(ValidationError, match="wrong length"):
+        Definition.model_validate(definition_with(operators=[operator]))
+
+
+def test_absent_operator_and_creator_fields_are_allowed() -> None:
+    # The shape `charon create cluster` writes: no operator or creator addresses
+    # and no signatures. Empty is absence, and hashes as all zeros.
+    definition = Definition.model_validate(
+        definition_with(operators=[{"enr": "enr:-abc"}], creator={})
+    )
+
+    assert definition.operators[0].address == ""
+    assert definition.creator.config_signature == b""
+
+
+@pytest.mark.parametrize("field", ["fee_recipient_address", "withdrawal_address"])
+def test_validator_addresses_are_never_absent(field: str) -> None:
+    addresses = {"fee_recipient_address": "0x" + "22" * 20, "withdrawal_address": "0x" + "33" * 20}
+
+    with pytest.raises(ValidationError, match="invalid address"):
+        Definition.model_validate(definition_with(validators=[addresses | {field: ""}]))
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+        "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed",
+        "0x5AAEB6053F3E94C9B9A09F33669435E7EF1BEAED",
+    ],
+)
+def test_addresses_may_be_checksummed_or_single_case(address: str) -> None:
+    Definition.model_validate(
+        definition_with(
+            validators=[{"fee_recipient_address": address, "withdrawal_address": address}]
+        )
+    )
+
+
+def test_a_mixed_case_address_must_carry_its_checksum() -> None:
+    wrong = "0x5aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+
+    with pytest.raises(ValidationError, match="bad address checksum"):
+        Definition.model_validate(definition_with(creator={"address": wrong}))
+
+
+@pytest.mark.parametrize("fork_version", ["0x00000000", "0x00000064"])
+@pytest.mark.parametrize("field", ["fee_recipient_address", "withdrawal_address"])
+def test_zero_validator_addresses_are_valid_on_mainnet_and_gnosis(
+    fork_version: str, field: str
+) -> None:
+    # Refusing them is creation-time policy, not file validity: deployed mainnet
+    # clusters use a zero withdrawal address deliberately.
+    addresses = {"fee_recipient_address": "0x" + "22" * 20, "withdrawal_address": "0x" + "33" * 20}
+    Definition.model_validate(
+        definition_with(
+            fork_version=fork_version, validators=[addresses | {field: "0x" + "00" * 20}]
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("amounts", "compounding", "valid"),
+    [
+        (["1000000000", "31000000000"], False, True),
+        (["32000000000"], False, True),
+        (["999999999"], False, False),
+        (["32000000001"], False, False),
+        (["2048000000000"], True, True),
+        (["2048000000001"], True, False),
+        (["0"], True, False),
+    ],
+)
+def test_deposit_amounts_are_bounded_by_credential_type(
+    amounts: list[str], compounding: bool, valid: bool
+) -> None:
+    data = definition_with(deposit_amounts=amounts, compounding=compounding)
+    if valid:
+        Definition.model_validate(data)
+        return
+
+    with pytest.raises(ValidationError, match="deposit amount out of range"):
+        Definition.model_validate(data)
+
+
+LOCK_VALIDATOR = {
+    "distributed_public_key": "0x" + "a1" * 48,
+    "public_shares": ["0x" + "b1" * 48],
+    "partial_deposit_data": [
+        {
+            "pubkey": "0x" + "a1" * 48,
+            "withdrawal_credentials": "0x01" + "00" * 11 + "33" * 20,
+            "amount": "32000000000",
+            "signature": "0x" + "c1" * 96,
+        }
+    ],
+    "builder_registration": {
+        "message": {
+            "fee_recipient": "0x" + "22" * 20,
+            "gas_limit": 30000000,
+            "timestamp": 1655733600,
+            "pubkey": "0x" + "a1" * 48,
+        },
+        "signature": "0x" + "d1" * 96,
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("path", "size"),
+    [
+        (("distributed_public_key",), 48),
+        (("public_shares", 0), 48),
+        (("partial_deposit_data", 0, "pubkey"), 48),
+        (("partial_deposit_data", 0, "withdrawal_credentials"), 32),
+        (("partial_deposit_data", 0, "signature"), 96),
+        (("builder_registration", "message", "fee_recipient"), 20),
+        (("builder_registration", "message", "pubkey"), 48),
+        (("builder_registration", "signature"), 96),
+    ],
+)
+@pytest.mark.parametrize("delta", [-1, 1, "empty"])
+def test_lock_fixed_fields_reject_any_other_length(
+    path: tuple[object, ...], size: int, delta: object
+) -> None:
+    validator = json.loads(json.dumps(LOCK_VALIDATOR))
+    DistValidator.model_validate(validator)
+
+    target = validator
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = "" if delta == "empty" else "0x" + "ee" * (size + int(str(delta)))
+
+    with pytest.raises(ValidationError, match="wrong length"):
+        DistValidator.model_validate(validator)
+
+
+def test_lock_signatures_are_length_checked_at_verification_not_parse() -> None:
+    # Neither is covered by the lock hash, and Charon's own v1.10 regression
+    # fixture carries 32-byte placeholders in both, so parsing accepts them.
+    lock = Lock.model_validate(
+        {
+            "cluster_definition": MINIMAL_DEFINITION,
+            "distributed_validators": [LOCK_VALIDATOR],
+            "signature_aggregate": "0x" + "ab" * 32,
+            "node_signatures": ["0x" + "cd" * 32],
+        }
+    )
+
+    assert len(lock.signature_aggregate) == 32
+
+
+@pytest.mark.parametrize(
+    ("amounts", "valid"),
+    [
+        ([], True),
+        (["16000000000", "16000000000"], True),
+        (["16000000000", "15999999999"], False),
+        (["1000000000"], False),
+    ],
+)
+def test_non_empty_deposit_amounts_sum_to_at_least_32_eth(amounts: list[str], valid: bool) -> None:
+    # Charon's VerifyDepositAmounts: repetition is allowed, empty means defaults.
+    data = definition_with(deposit_amounts=amounts)
+    if valid:
+        Definition.model_validate(data)
+        return
+
+    with pytest.raises(ValidationError, match="sum to less than 32 ETH"):
+        Definition.model_validate(data)

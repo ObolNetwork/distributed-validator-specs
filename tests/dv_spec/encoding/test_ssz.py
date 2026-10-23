@@ -191,18 +191,33 @@ def test_put_byte_list_rejects_an_over_long_value() -> None:
         put_byte_list(HashWalker(), b"toolong", 4, "field")
 
 
-def test_put_bytes_n_left_pads() -> None:
-    # Charon left-pads short fixed-size fields, so an absent signature hashes as
-    # an all-zero one rather than as a right-padded stub.
+def test_put_bytes_n_writes_an_exact_length_value() -> None:
     walker = HashWalker()
-    put_bytes_n(walker, b"\x01", 4, "field")
+    put_bytes_n(walker, b"\x01\x02\x03\x04", 4, "field")
 
-    assert bytes(walker.buffer)[:4] == b"\x00\x00\x00\x01"
+    assert bytes(walker.buffer) == b"\x01\x02\x03\x04".ljust(32, b"\x00")
 
 
-def test_put_bytes_n_rejects_an_over_long_value() -> None:
-    with pytest.raises(ValueError, match="over the fixed length"):
-        put_bytes_n(HashWalker(), b"\x01" * 5, 4, "field")
+@pytest.mark.parametrize("length", [1, 3, 5])
+def test_put_bytes_n_rejects_any_other_length(length: int) -> None:
+    # Charon left-pads a short value and some libraries truncate a long one, so
+    # a malformed field would hash like a well-formed one. The spec refuses both.
+    with pytest.raises(ValueError, match="field has the wrong length"):
+        put_bytes_n(HashWalker(), b"\x01" * length, 4, "field")
+
+
+def test_put_bytes_n_hashes_an_allowed_absent_value_as_zeros() -> None:
+    # An uncollected signature is written empty and hashes as all zeros, as in
+    # Charon. Only fields that opt in accept it.
+    absent = HashWalker()
+    put_bytes_n(absent, b"", 4, "field", absent_ok=True)
+    zeros = HashWalker()
+    put_bytes_n(zeros, b"\x00" * 4, 4, "field")
+
+    assert absent.buffer == zeros.buffer
+
+    with pytest.raises(ValueError, match="wrong length: 0 bytes"):
+        put_bytes_n(HashWalker(), b"", 4, "field")
 
 
 def test_walker_refuses_to_merkleize_an_unaligned_buffer() -> None:

@@ -22,6 +22,8 @@ from dv_spec.cluster.lock import (
 )
 from dv_spec.cluster.verification import (
     aggregate_pubkeys,
+    verify_builder_registrations,
+    verify_deposit_data,
     verify_node_signatures,
     verify_pubshare_counts,
     verify_shares_reconstruct,
@@ -172,7 +174,15 @@ def test_an_empty_lock_fails_only_the_aggregate_check() -> None:
     verify_pubshare_counts(empty)
     verify_shares_reconstruct(empty)
     assert verify_node_signatures(empty, [])
-    assert not verify_signature_aggregate(empty)
+
+    # An unsigned lock carries no aggregate at all, which is a malformed lock
+    # rather than a signature that failed.
+    with pytest.raises(ValueError, match="signature_aggregate has the wrong length"):
+        verify_signature_aggregate(empty)
+
+    assert not verify_signature_aggregate(
+        empty.model_copy(update={"signature_aggregate": bytes(96)})
+    )
 
 
 def test_a_share_off_the_polynomial_is_rejected(sharing: Sharing) -> None:
@@ -267,3 +277,26 @@ def test_node_signature_count_mismatch_is_an_error_not_a_rejection() -> None:
 
     with pytest.raises(ValueError, match="node public keys for 2 operators"):
         verify_node_signatures(complete, pubkeys[:1])
+
+
+def test_deposit_and_registration_checks_pair_validators_with_addresses() -> None:
+    lock = make_lock(b"\xa1" * 48, [b"\xb1" * 48], operator_count=1)
+    unpaired = lock.model_copy(update={"validators": list(lock.validators) * 2})
+
+    for verify in (verify_deposit_data, verify_builder_registrations):
+        with pytest.raises(ValueError, match="2 validators but the definition has 1"):
+            verify(unpaired)
+
+
+def test_a_validator_without_deposit_data_passes_vacuously() -> None:
+    # Charon always writes at least one deposit, but nothing about an empty list
+    # can send funds anywhere; the lock hash and aggregate still bind it.
+    verify_deposit_data(make_lock(b"\xa1" * 48, [b"\xb1" * 48], operator_count=1))
+
+
+def test_registration_fee_recipient_is_compared_with_the_definition() -> None:
+    # make_lock's registration names 0xfefe..., the definition 0x1111...
+    lock = make_lock(b"\xa1" * 48, [b"\xb1" * 48], operator_count=1)
+
+    with pytest.raises(ValueError, match="registration fee recipient mismatch"):
+        verify_builder_registrations(lock)
