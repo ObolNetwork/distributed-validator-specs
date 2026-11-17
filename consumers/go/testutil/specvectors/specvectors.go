@@ -47,6 +47,7 @@ const DirEnv = "SPEC_VECTORS_DIR"
 var CoveredSuites = map[string]string{
 	"bls_threshold":           "testutil/specvectors (tbls)",
 	"cluster_hashing":         "testutil/specvectors (cluster)",
+	"cluster_validation":      "testutil/specvectors (cluster parse and verify)",
 	"secp256k1_signatures":    "testutil/specvectors (k1util)",
 	"qbft_hashing":            "core/consensus/qbft (hashProto)",
 	"qbft_msg_limits":         "core/consensus/qbft (verifyMsgLimits)",

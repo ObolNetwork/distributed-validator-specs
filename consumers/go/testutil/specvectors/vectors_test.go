@@ -88,6 +88,75 @@ func TestClusterHashing(t *testing.T) {
 	}
 }
 
+// --- cluster validation ------------------------------------------------------
+
+// TestClusterValidation runs the accept/reject verdicts of cluster_validation.
+//
+// A definition is accepted if it unmarshals and its stored hashes verify; a lock
+// if it unmarshals and passes VerifyHashes and VerifySignatures (no eth1 client
+// is needed: every lock case has an unsigned definition). Only the verdict is
+// asserted. The suite's reason slugs name the spec rule that fired, and Charon's
+// error text is not mapped onto them.
+//
+// Charon releases up to the anchor accept most rejected cases: they pad short
+// fixed-size fields, ignore address case, and do not check lock deposit data or
+// zero addresses at load. The cases are built so that every hash and signature
+// in them verifies for a reader that pads, so passing this test needs the
+// field rules themselves.
+func TestClusterValidation(t *testing.T) {
+	type validationCase struct {
+		Name     string          `json:"name"`
+		Input    json.RawMessage `json:"input"`
+		Accepted bool            `json:"accepted"`
+		Reason   *string         `json:"reason"`
+	}
+	var suite struct {
+		Definition []validationCase `json:"definition"`
+		Lock       []validationCase `json:"lock"`
+	}
+	specvectors.Load(t, "cluster_validation", &suite)
+	require.NotEmpty(t, suite.Definition)
+	require.NotEmpty(t, suite.Lock)
+
+	verdict := func(t *testing.T, tt validationCase, err error) {
+		t.Helper()
+
+		if tt.Accepted {
+			require.NoError(t, err)
+			return
+		}
+
+		require.Errorf(t, err, "must reject: %s", *tt.Reason)
+	}
+
+	for _, tt := range suite.Definition {
+		t.Run("definition/"+tt.Name, func(t *testing.T) {
+			var definition cluster.Definition
+			err := json.Unmarshal(tt.Input, &definition)
+			if err == nil {
+				err = definition.VerifyHashes()
+			}
+
+			verdict(t, tt, err)
+		})
+	}
+
+	for _, tt := range suite.Lock {
+		t.Run("lock/"+tt.Name, func(t *testing.T) {
+			var lock cluster.Lock
+			err := json.Unmarshal(tt.Input, &lock)
+			if err == nil {
+				err = lock.VerifyHashes()
+			}
+			if err == nil {
+				err = lock.VerifySignatures(nil)
+			}
+
+			verdict(t, tt, err)
+		})
+	}
+}
+
 // --- BLS threshold signatures ----------------------------------------------
 
 type shareIndices struct {

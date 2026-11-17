@@ -26,6 +26,9 @@ from dv_spec.cluster.lock import (
 )
 from dv_spec.cluster.verification import (
     aggregate_pubkeys,
+    verify_builder_registrations,
+    verify_deposit_data,
+    verify_lock,
     verify_node_signatures,
     verify_pubshare_counts,
     verify_shares_reconstruct,
@@ -50,7 +53,10 @@ __all__ = [
     "definition_hash",
     "lock_hash",
     "require_supported_version",
+    "verify_builder_registrations",
     "verify_definition_hashes",
+    "verify_deposit_data",
+    "verify_lock",
     "verify_lock_hash",
     "verify_node_signatures",
     "verify_pubshare_counts",

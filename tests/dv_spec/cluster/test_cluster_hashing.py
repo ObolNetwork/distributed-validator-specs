@@ -18,10 +18,10 @@ from dv_spec.cluster.definition import (
 )
 from dv_spec.cluster.hashing import (
     config_hash,
-    decode_address,
     definition_hash,
     hash_registration,
     lock_hash,
+    put_address,
     verify_definition_hashes,
     verify_lock_hash,
 )
@@ -229,22 +229,28 @@ def test_unsupported_versions_are_rejected(version: str) -> None:
         lock_hash(forced_lock)
 
 
-def test_decode_address_treats_empty_as_absent() -> None:
-    # Charon left-pads the result to 20 bytes, so an absent address and an
-    # all-zero address hash identically.
-    assert decode_address("") == b""
-    assert decode_address(ADDRESS) == b"\x11" * 20
-    assert decode_address("11" * 20) == b"\x11" * 20
+def test_absent_address_hashes_as_the_zero_address() -> None:
+    # Charon left-pads an empty address to 20 zero bytes. Only the operator and
+    # creator addresses may be absent, and they opt in explicitly.
+    def root(address: str, *, absent_ok: bool) -> bytes:
+        walker = HashWalker()
+        put_address(walker, address, "address", absent_ok=absent_ok)
+        return walker.hash_root()
+
+    assert root("", absent_ok=True) == root("0x" + "00" * 20, absent_ok=False)
+
+    with pytest.raises(ValueError, match="invalid address"):
+        root("", absent_ok=False)
 
 
 @pytest.mark.parametrize(
     "address",
-    ["0x1234", "0x" + "11" * 21, "0xnothex" + "0" * 33, "0x11 22" + "33" * 18],
+    ["0x1234", "0x" + "11" * 21, "11" * 20, "0xnothex" + "0" * 33, "0x11 22" + "33" * 18],
 )
-def test_decode_address_rejects_malformed_input(address: str) -> None:
+def test_put_address_rejects_malformed_input(address: str) -> None:
     # The whitespace case would slip through bytes.fromhex; Go rejects it.
-    with pytest.raises(ValueError, match="address"):
-        decode_address(address)
+    with pytest.raises(ValueError, match="invalid address"):
+        put_address(HashWalker(), address, "address", absent_ok=True)
 
 
 def test_absent_signature_hashes_as_an_all_zero_one() -> None:
@@ -284,23 +290,24 @@ def test_byte_list_capacities_are_enforced_at_their_boundary() -> None:
         config_hash(make_definition(operators=operators))
 
 
-def test_fee_recipient_is_right_padded_unlike_every_other_address() -> None:
-    # Charon writes this one field with PutBytes rather than a fixed length. A
-    # reader treating it as Bytes20 would agree on every realistic input and
-    # diverge on a short one, which is why the rule needs pinning here.
-    def registration_root(fee_recipient: bytes) -> bytes:
-        walker = HashWalker()
-        message = Registration(
-            fee_recipient=fee_recipient,
+def test_short_fee_recipient_is_rejected_rather_than_padded() -> None:
+    # Charon writes this one field with PutBytes rather than a fixed length, so a
+    # short value is right-padded there, unlike every other fixed field. Both
+    # paddings are refused here: at parse, and at hashing for a model built
+    # without validation.
+    with pytest.raises(ValueError, match="wrong length: 2 bytes, expected 20"):
+        Registration(
+            fee_recipient=bytes.fromhex("9be1"),
             gas_limit=30000000,
             timestamp=1655733600,
             pubkey=b"\xa1" * 48,
         )
-        hash_registration(walker, message)
 
-        return walker.hash_root()
-
-    short = bytes.fromhex("9be1")
-
-    assert registration_root(short) == registration_root(short + b"\x00" * 18)
-    assert registration_root(short) != registration_root(b"\x00" * 18 + short)
+    unvalidated = Registration.model_construct(
+        fee_recipient=bytes.fromhex("9be1"),
+        gas_limit=30000000,
+        timestamp=1655733600,
+        pubkey=b"\xa1" * 48,
+    )
+    with pytest.raises(ValueError, match="fee_recipient has the wrong length"):
+        hash_registration(HashWalker(), unvalidated)

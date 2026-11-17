@@ -16,6 +16,7 @@ const COVERED: &[(&str, &str)] = &[
     ("qbft_hashing", "tests/qbft_hashing.rs"),
     ("bls_threshold", "tests/bls_threshold.rs"),
     ("cluster_hashing", "tests/cluster_hashing.rs"),
+    ("cluster_validation", "tests/cluster_validation.rs"),
     ("priority_scoring", "tests/priority_scoring.rs"),
     ("timer_deadlines", "tests/timer_deadlines.rs"),
     ("qbft_msg_limits", "tests/qbft_msg_limits.rs"),

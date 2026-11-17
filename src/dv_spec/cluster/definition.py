@@ -16,8 +16,8 @@ models unchanged, and every field default is Go's zero value, so a key absent
 from a file parses — and therefore hashes — exactly as Charon parses it. Two
 encoding quirks are Charon's and are reproduced deliberately:
 
-- Ethereum addresses stay hex *strings*, and are decoded only inside the hash
-  function. Nothing compares them as text, so case is not significant.
+- Ethereum addresses stay hex *strings*, and are decoded only where they are
+  hashed or compared, so a file round-trips with its addresses as written.
 - Deposit amounts are JSON strings, not numbers, because Charon types them as
   `phase0.Gwei`.
 
@@ -25,26 +25,67 @@ Serialization is not byte-identical to Go's: these models write `[]` where Go
 writes `null` for a nil slice, and keep empty string fields that Go's
 `omitempty` drops. Both forms parse to the same model and hash on either side.
 
+Validation
+----------
+Parsing a definition enforces more than Charon does when it loads one, because
+every rule below is one a malformed file can break without changing a single
+hash or signature:
+
+- **Fixed-size fields have exactly their size.** `fork_version` is 4 bytes, the
+  stored hashes 32, signatures 65. SSZ hashing pads a short value, so a short
+  field would otherwise hash like a padded one.
+- **Absent means empty, and only empty.** A field that is legitimately absent is
+  written as the empty string, and hashes as all zeros: operator and creator
+  signatures before they are collected, the operator and creator addresses of a
+  definition `charon create cluster` writes (it sets neither), and the stored
+  hashes before they are computed. These fields are the only ones that may be
+  empty, and none may be any length other than empty or exact. A validator's
+  fee recipient and withdrawal address are never absent.
+- **Addresses** follow `dv_spec.types.address`: `0x` plus 40 hex digits, one
+  case or a correct EIP-55 checksum.
+- **The zero address is a valid address** for a validator's fee recipient or
+  withdrawal address, on every network. Refusing it is creation-time policy
+  (Charon's `create dkg` refuses a zero withdrawal address on mainnet and
+  Gnosis Chain), not a rule of the file format: deployed mainnet clusters use
+  it deliberately, so a reader that rejected it would refuse valid locks.
+- **Each deposit amount is within bounds** for the definition's credential type:
+  at least 1 ETH, at most 32 ETH, or 2048 ETH when `compounding`.
+- **Non-empty deposit amounts sum to at least 32 ETH**, repetition allowed, as
+  Charon requires when it parses a definition. Empty means the defaults.
+
 Scope
 -----
-- The v1.10.0 definition and its members, and their JSON form.
+- The v1.10.0 definition and its members, their JSON form, and the validation
+  rules above.
 
 Out of scope
 ------------
 - EIP-712 signature construction over the config hash. The definition's
   signatures authorise operators and are verified by Charon before a DKG, but
   they are an Ethereum-signing concern rather than a DV wire format.
-- Address checksums, ENR decoding, and the deposit-amount sum rules.
+- ENR decoding.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any, List
 
-from pydantic import BeforeValidator, Field, PlainSerializer, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BeforeValidator,
+    Field,
+    PlainSerializer,
+    field_validator,
+    model_validator,
+)
 
+from dv_spec.cluster.deposit import check_deposit_amounts
+from dv_spec.types.address import (
+    validate_address,
+    validate_optional_address,
+)
 from dv_spec.types.base import StrictBaseModel
-from dv_spec.types.hex import HexBytes
+from dv_spec.types.hex import FixedHexBytes4, OptionalHexBytes32, OptionalHexBytes65
 from dv_spec.types.uint64 import UINT64_MAX
 
 
@@ -128,9 +169,6 @@ MAX_VALIDATORS = 65536
 MAX_DEPOSIT_AMOUNTS = 256
 """SSZ list capacity of `deposit_amounts`, and of partial deposit data."""
 
-ADDRESS_LENGTH = 20
-"""Length of an Ethereum address, once its hex string is decoded."""
-
 FORK_VERSION_LENGTH = 4
 """Length of the beacon chain fork version."""
 
@@ -140,22 +178,32 @@ K1_SIGNATURE_LENGTH = 65
 HASH_LENGTH = 32
 """Length of a config, definition or lock hash."""
 
+Address = Annotated[str, AfterValidator(validate_address)]
+"""A required Ethereum address string; see `dv_spec.types.address`."""
+
+OptionalAddress = Annotated[str, AfterValidator(validate_optional_address)]
+"""An Ethereum address string, or empty when the file leaves it unset."""
+
 
 class Operator(StrictBaseModel):
     """A charon node in the cluster and the operator that runs it."""
 
-    address: str = Field(
-        description=("The operator's 20-byte Ethereum address, as a 0x-prefixed hex string"),
+    address: OptionalAddress = Field(
+        default="",
+        description=(
+            "The operator's 20-byte Ethereum address, as a 0x-prefixed hex string. "
+            "Empty when the definition was not created through operator signatures"
+        ),
     )
     enr: str = Field(
         default="",
         description="ENR identifying the charon node, at most 1024 characters",
     )
-    config_signature: HexBytes = Field(
+    config_signature: OptionalHexBytes65 = Field(
         default=b"",
         description=("EIP-712 signature of the config hash by `address`, 65 bytes at v1.10"),
     )
-    enr_signature: HexBytes = Field(
+    enr_signature: OptionalHexBytes65 = Field(
         default=b"",
         description=(
             "EIP-712 signature of the ENR by `address`, authorising the node to "
@@ -167,10 +215,14 @@ class Operator(StrictBaseModel):
 class Creator(StrictBaseModel):
     """The operator that created the definition. May also be an operator."""
 
-    address: str = Field(
-        description="The creator's 20-byte Ethereum address, as a 0x-prefixed hex string",
+    address: OptionalAddress = Field(
+        default="",
+        description=(
+            "The creator's 20-byte Ethereum address, as a 0x-prefixed hex string. "
+            "Empty when the definition was not created through operator signatures"
+        ),
     )
-    config_signature: HexBytes = Field(
+    config_signature: OptionalHexBytes65 = Field(
         default=b"",
         description="EIP-712 signature of the config hash by `address`, 65 bytes at v1.10",
     )
@@ -179,10 +231,10 @@ class Creator(StrictBaseModel):
 class ValidatorAddresses(StrictBaseModel):
     """The fee recipient and withdrawal addresses of one validator."""
 
-    fee_recipient_address: str = Field(
+    fee_recipient_address: Address = Field(
         description="20-byte Ethereum address to receive execution layer rewards",
     )
-    withdrawal_address: str = Field(
+    withdrawal_address: Address = Field(
         description="20-byte Ethereum address to receive withdrawals",
     )
 
@@ -217,7 +269,7 @@ class Definition(StrictBaseModel, populate_by_name=True, serialize_by_alias=True
         default="",
         description="DKG algorithm to run; Charon writes 'default', which selects FROST",
     )
-    fork_version: HexBytes = Field(
+    fork_version: FixedHexBytes4 = Field(
         description="The 4-byte beacon chain fork version, identifying the network",
     )
     operators: Annotated[List[Operator], NullableList] = Field(
@@ -249,14 +301,14 @@ class Definition(StrictBaseModel, populate_by_name=True, serialize_by_alias=True
         default=False,
         description="Whether validators use 0x02 compounding withdrawal credentials",
     )
-    config_hash: HexBytes = Field(
+    config_hash: OptionalHexBytes32 = Field(
         default=b"",
         description=(
             "Hash of the configuration excluding operator ENRs and signatures. "
             "Operators sign this, so it must be stable while signatures are collected"
         ),
     )
-    definition_hash: HexBytes = Field(
+    definition_hash: OptionalHexBytes32 = Field(
         default=b"",
         description="Hash of the whole definition, including ENRs and signatures",
     )
@@ -285,6 +337,13 @@ class Definition(StrictBaseModel, populate_by_name=True, serialize_by_alias=True
                 f"num_validators is {self.num_validators} but the file has "
                 f"{len(self.validator_addresses)} validator address entries"
             )
+
+        return self
+
+    @model_validator(mode="after")
+    def _deposit_amounts_must_be_in_range(self) -> Definition:
+        """Reject an out-of-range amount, or amounts summing to under 32 ETH."""
+        check_deposit_amounts(self.deposit_amounts, self.compounding)
 
         return self
 

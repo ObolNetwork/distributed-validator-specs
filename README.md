@@ -49,6 +49,7 @@ targets `v1.7.1`): some specified behaviors landed after `v1.7.1`:
 | Preferred priority protocol ID `/charon/priority/2.0.0`             | unreleased (`main`)  |
 | Stable sort of scored priorities                                    | unreleased (`main`)  |
 | Sender-bound share indices in the DKG lock-hash exchange            | unreleased (`main`)  |
+| Strict cluster file validation (fixed-length fields, address checksums, lock deposit data and builder registrations) | unreleased (not yet in `main`) |
 
 All of these are backwards compatible on the wire (unknown proto fields are
 ignored; limits only reject messages no honest peer sends), so implementing
@@ -66,7 +67,9 @@ speaks, so it must still be served alongside the preferred spelling; Charon's ow
 code targets `v1.12` for the preferred ID and `v1.14` for dropping the alias. The
 stable sort only changes results for a tie among thirteen or more priorities in a
 topic, which no released Charon produces. The sender binding rejects only
-partial signatures no honest peer sends. The timer fix and the QBFT limits
+partial signatures no honest peer sends. Strict cluster file validation rejects only cluster
+files Charon's own DKG never writes; it is specified ahead of Charon, which at
+this anchor still pads short fields and does not check a lock's deposit data. The timer fix and the QBFT limits
 shipped in the `v1.11.0` release candidates but, as of this anchor, no final
 release — they are listed as unreleased until one exists, because "first Charon
 release" must name a release a consumer can actually run.
